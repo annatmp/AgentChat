@@ -1,0 +1,60 @@
+{
+  "name": "Agent Development Container",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  
+  // Set a fixed container name for easy access from external terminals
+  "runArgs": ["--name", "agent-chat-devcontainer"],
+  
+  // Features to install after base image
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "installOhMyZsh": true,
+      "upgradePackages": true
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest"
+    }
+  },
+
+  // Mounts - workspace is auto-mounted by Dev Containers
+  // "mounts": [],
+
+  // Set the workspace folder inside the container (using default /workspaces/<folder>)
+  "workspaceFolder": "/workspaces/agent-chat",
+
+
+  // Customize VS Code settings
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "python.defaultInterpreterPath": "/usr/local/bin/python"
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "github.copilot"
+      ]
+    }
+  },
+
+  // Environment variables for SSL certificate support
+  "containerEnv": {
+    "NODE_EXTRA_CA_CERTS": "/etc/ssl/certs/ca-certificates.crt",
+    "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+    "REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+    "CURL_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt"
+  },
+
+  // Run as non-root user for security
+  "remoteUser": "vscode",
+
+  // Post-start command (runs every time the container starts)
+  "postStartCommand": "git config --global --add safe.directory /workspaces/agent-chat && echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> ~/.zshrc && echo '# opencode' >> ~/.zshrc && echo 'export PATH=\"$HOME/.opencode/bin:$PATH\"' >> ~/.zshrc || true"
+}
