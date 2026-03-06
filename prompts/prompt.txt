@@ -1,0 +1,38 @@
+Build an MVP calculator app for the command line.
+
+Requirements (strict minimum):
+- Four arithmetic operations: +, -, *, /
+- A display showing the current input and result
+- Number input (0–9) and operator commands
+- A clear command and an equals command
+- No external libraries or frameworks
+- no memory, you only calculate what the user inputs. Nothing more
+- Any wrong input by the user should just yield an Error. This includes invalid syntax (e.g. two operators after each other) and non-valid statements (division by 0)
+
+The final output must be a detailed plan with a list of User Stories (including title, description, effort) that allow developers to pick up the problem after your conversation.
+
+---
+
+FAQ (answer these before they come up):
+
+Q: Should it handle decimal numbers?
+A: No. Integer inputs only for MVP.
+
+Q: What happens on division by zero?
+A: Display "Error" and reset on the next input.
+
+Q: How should chained operations work (e.g. 2 + 3 * 4)?
+A: Left-to-right evaluation only — no operator precedence. Keep it simple.
+
+Q: Should the display show the full expression or just the current number?
+A: Just the current number or result. No expression history needed.
+
+Q: What if the user enters an operator after another operator?
+A: Display Error
+
+Q: What language should be used?
+A: Any language (Bash, Python, Go, etc.). Choose based on what works best.
+
+Q: Can built-in eval() be used for the math logic?
+A: No. Implement the arithmetic explicitly to keep logic transparent and secure.
+

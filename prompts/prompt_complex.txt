@@ -1,0 +1,3 @@
+Build a working prototype that allows a group of people to input shared expenses and calculate who owes whom, minimizing the number of transactions needed to settle up.
+
+The final output must be a detailed plan with a list of User Stories (including title, description, effort) that allow developers to pick up the problem after your conversation.

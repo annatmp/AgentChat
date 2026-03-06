@@ -1,0 +1,229 @@
+--- CONFIG ---
+planner: model=claude-sonnet-4-6 provider=anthropic max_tokens=4096
+critic: model=Llama-4-Scout-17B-16E-Instruct provider=azure_ai max_tokens=4096
+--- END CONFIG ---
+
+
+[PLANNER]
+
+I'll start by framing the problem and laying out a high-level plan, then we can refine together.
+
+---
+
+**Core Problem Breakdown:**
+
+1. **Data Input** — Users need to log expenses (who paid, how much, who splits it)
+2. **Debt Calculation** — Compute net balances per person
+3. **Transaction Minimization** — Use a greedy algorithm to settle debts in fewest transfers
+4. **Output** — Display clear "X owes Y $Z" results
+
+**Proposed Tech Stack (for prototype speed):**
+- Frontend: Simple web UI (React or plain HTML/JS)
+- Backend: Node.js or Python Flask
+- Storage: In-memory or lightweight DB (SQLite)
+
+**Key Questions Before I Detail Further:**
+- Are we targeting a single group session (ephemeral) or persistent groups over time?
+- Do we need user authentication, or is this a shared-link model?
+- Any multi-currency requirements?
+
+I'd like to hear thoughts on scope before I draft user stories. What's the MVP boundary here — should we focus purely on the calculation engine first, or do we need a full UI from day one?
+
+[CRITIC]
+
+[critic]: I like the breakdown, but let's challenge a few assumptions.
+
+1. **Data Input**: You mention users logging expenses, but how do you plan to handle errors or invalid inputs? What if someone enters a negative expense or tries to split an expense unevenly?
+2. **Debt Calculation**: The net balances per person seem straightforward, but what about cases where there's a large number of users or expenses? Will the algorithm scale?
+3. **Transaction Minimization**: A greedy algorithm might not always find the optimal solution. Have you considered using a more advanced algorithm like the [Hungarian algorithm](https://en.wikipedia.org/wiki/Hungarian_algorithm) or [Birkhoff–Vandiver algorithm](https://en.wikipedia.org/wiki/Birkhoff%E2%80%93Vandiver_algorithm)?
+
+Regarding the MVP boundary, I think we should focus on the calculation engine first. A simple UI can be built quickly, but it's essential to ensure the core logic works correctly.
+
+For the scope:
+
+* Let's assume a single group session (ephemeral) for the MVP.
+* No user authentication for now; a shared-link model can be added later.
+* Single currency for simplicity.
+
+Before drafting user stories, can you elaborate on the proposed tech stack? Why Node.js or Python Flask, and why React or plain HTML/JS? What are the trade-offs you're considering?
+
+[PLANNER]
+
+Great pushback — let me address each point directly.
+
+**On input validation:** Agreed, we need guardrails. Negative expenses, zero splits, and uneven division remainders all need handling. I'd propose validation at the input layer with clear error messages rather than silent failures.
+
+**On scaling:** For a prototype with typical group sizes (2-20 people), a greedy algorithm on net balances is perfectly sufficient. The debt simplification problem with N people produces at most N-1 transactions — that's inherently small. I'd defer optimization until we have real scale data.
+
+**On algorithm choice:** I'd actually push back here. The Hungarian algorithm solves assignment problems, not debt minimization. For our case, the **greedy net-balance approach** (sort creditors/debtors, match largest against largest) is well-proven for this exact problem and gives optimal or near-optimal results for typical group sizes. Complexity isn't our enemy here — correctness is.
+
+**On tech stack:** My reasoning is pragmatic for a prototype:
+- **Flask + SQLite** — minimal boilerplate, fast to iterate, Python is readable for algorithm logic
+- **Plain HTML/JS** — no build toolchain, anyone can open it in a browser
+
+React adds complexity we don't need yet. We can always migrate.
+
+**My proposed priority order:**
+1. Calculation engine (pure logic, testable in isolation)
+2. Minimal UI
+3. Input validation layer
+
+Does that sequencing make sense to you before we draft stories?
+
+[CRITIC]
+
+[critic]: You've addressed my concerns, and I agree with your priorities.
+
+The greedy net-balance approach seems suitable for small to medium-sized groups, and correctness is indeed crucial. I appreciate your pragmatism with the tech stack; Flask + SQLite and plain HTML/JS will allow for a quick prototype.
+
+Your proposed sequence makes sense:
+
+1. **Calculation engine**: Focus on the core logic, and make it testable in isolation. This will give us a solid foundation.
+2. **Minimal UI**: A basic UI will help visualize the output and ensure the calculation engine is working correctly.
+3. **Input validation layer**: Once we have a working engine and UI, we can add validation to prevent errors and edge cases.
+
+Before we draft user stories, let's define some acceptance criteria for each of these components. For example:
+
+* Calculation engine:
+	+ Can handle a group of 2-20 people.
+	+ Produces correct net balances.
+	+ Generates a list of transactions to settle debts.
+* Minimal UI:
+	+ Displays a list of expenses.
+	+ Shows the calculated net balances.
+	+ Allows users to input new expenses.
+* Input validation layer:
+	+ Prevents negative expenses.
+	+ Handles zero or uneven splits.
+
+With these criteria in mind, we can create user stories that are specific, measurable, and achievable. Are you ready to start drafting?
+
+--- SUMMARY ---
+
+# Final User Stories — Shared Expense Splitter Prototype
+
+---
+
+## Agreed Scope (from conversation)
+- **Single group session** (ephemeral, no persistence between sessions)
+- **No authentication** (shared-link model deferred)
+- **Single currency**
+- **Stack:** Python Flask + SQLite + Plain HTML/JS
+- **Priority:** Calculation engine → Minimal UI → Input validation
+
+---
+
+## User Stories
+
+---
+
+### 1. Add an Expense
+**Title:** Log a shared expense
+**Description:**
+As a group member, I want to enter an expense (description, total amount, who paid, and who it's split among) so that the group's spending is tracked accurately.
+
+**Acceptance Criteria:**
+- User can input: payer name, expense description, total amount, and list of people sharing the cost
+- Expense is saved to the current session
+- Equal split is calculated automatically across selected participants
+- Expense appears in the expense list immediately after submission
+
+**Effort:** Medium (3 points)
+
+---
+
+### 2. View All Expenses
+**Title:** View the group expense list
+**Description:**
+As a group member, I want to see all logged expenses in a single view so that I can verify what has been recorded before settling up.
+
+**Acceptance Criteria:**
+- All expenses for the session are displayed in a list
+- Each entry shows: payer, description, total amount, and participants
+- List updates without requiring a page reload
+
+**Effort:** Small (1 point)
+
+---
+
+### 3. Calculate Net Balances
+**Title:** Compute each person's net balance
+**Description:**
+As a group member, I want the system to calculate how much each person is owed or owes in total so that we have a clear picture before minimizing transactions.
+
+**Acceptance Criteria:**
+- System calculates net balance per person across all expenses
+- Positive balance = owed money; negative balance = owes money
+- Balances are recalculated whenever a new expense is added
+- Balances are accurate to two decimal places
+
+**Effort:** Medium (3 points)
+
+---
+
+### 4. Minimize and Display Settlement Transactions
+**Title:** Generate fewest transactions to settle all debts
+**Description:**
+As a group member, I want the system to tell me exactly who pays whom and how much, using the fewest possible transactions, so that settling up is simple and fast.
+
+**Acceptance Criteria:**
+- System applies greedy net-balance algorithm (largest debtor pays largest creditor first)
+- Output is a list of "Person A pays Person B $X" statements
+- Number of transactions does not exceed N-1 (where N = number of participants)
+- Results are displayed clearly on the UI
+
+**Effort:** Medium (3 points)
+
+---
+
+### 5. Validate Expense Inputs
+**Title:** Prevent invalid expense entries
+**Description:**
+As a group member, I want the system to reject bad inputs with clear error messages so that the calculation engine always operates on clean data.
+
+**Acceptance Criteria:**
+- Rejects negative or zero expense amounts
+- Requires at least two participants per expense (a payer + one other)
+- Payer must be included in the session's participant list
+- All validation errors display descriptive inline messages
+- No silent failures — submission is blocked until inputs are valid
+
+**Effort:** Small (2 points)
+
+---
+
+### 6. Initialize a Group Session
+**Title:** Create a new expense-splitting session
+**Description:**
+As a group organizer, I want to start a new session by entering the group members' names so that all subsequent expenses are scoped to this group.
+
+**Acceptance Criteria:**
+- User can input a list of participant names (minimum 2)
+- Session is created and persisted in SQLite for its duration
+- Participant names are referenced consistently across all expenses
+- Duplicate names are rejected with an error message
+
+**Effort:** Small (2 points)
+
+---
+
+## Story Summary Table
+
+| # | Title | Effort |
+|---|-------|--------|
+| 1 | Log a shared expense | Medium (3 pts) |
+| 2 | View the group expense list | Small (1 pt) |
+| 3 | Compute each person's net balance | Medium (3 pts) |
+| 4 | Generate fewest settlement transactions | Medium (3 pts) |
+| 5 | Prevent invalid expense entries | Small (2 pts) |
+| 6 | Create a new expense-splitting session | Small (2 pts) |
+| | **Total** | **14 points** |
+
+---
+
+## Recommended Build Order
+1. **Story 6** → Session initialization (foundation)
+2. **Story 3** → Calculation engine (core logic, test in isolation first)
+3. **Story 4** → Transaction minimization (depends on Story 3)
+4. **Story 1 + 2** → Input and display UI
+5. **Story 5** → Validation layer (added once flow works end-to-end)
