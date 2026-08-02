@@ -1,41 +1,20 @@
-Agent-Specific Background Knowledge: Expense Splitter POC
+# Role-specific background knowledge
 
-🧑‍💼 Product Owner
-Knows the business context and user research.
+This content now lives one file per role in [knowledge/](knowledge/), because each file is
+hashed into the run record and loaded as that agent's private context:
 
-The primary users are groups of friends settling up after holidays or house shares — not corporate expense management
-A previous attempt at this was abandoned because the settling-up math confused users; the new version must show how the result was calculated, not just the outcome
-Stakeholder has explicitly said: "no accounts, no login" for this POC — it must work as a zero-signup session
-There's a soft deadline because this POC will be demoed to a potential investor in the sprint review
+| Role | File | Agent |
+| ---- | ---- | ----- |
+| Product Owner | [knowledge/product_owner.md](knowledge/product_owner.md) | `product_owner` |
+| Backend Developer | [knowledge/backend_dev.md](knowledge/backend_dev.md) | `backend_dev` |
+| Frontend Developer | [knowledge/frontend_dev.md](knowledge/frontend_dev.md) | `frontend_dev` |
+| QA Engineer | [knowledge/qa_engineer.md](knowledge/qa_engineer.md) | `qa_engineer` |
+| Scrum Master | [knowledge/scrum_master.md](knowledge/scrum_master.md) | `scrum_master` |
+| Architect | [knowledge/architect.md](knowledge/architect.md) | `architect` |
 
+Each agent YAML points at its own file via a `knowledge:` field, and only that agent sees it —
+it is appended to that agent's system prompt, never to the shared history. Set
+`role_knowledge: false` in a run config to run the same panel without any of it (factor D in
+[docs/EXPERIMENT_DESIGN.md](docs/EXPERIMENT_DESIGN.md)).
 
-👩‍💻 Backend Developer
-Knows technical constraints and has done some upfront research.
-
-The debt simplification algorithm (minimizing transactions) is an NP-hard problem in its general form — for small groups (under ~10 people) a greedy approach works fine, but this should be flagged to the PO before over-engineering
-Floating point arithmetic on currency is a known trap — needs a decision on whether to work in cents (integers) or use a decimal library
-If persistence is needed, a flat JSON file is sufficient for a POC — no need to propose a database
-
-
-🎨 Frontend Developer
-Knows UI/UX considerations and tooling.
-
-A purely CLI approach will be hard to demo convincingly to a non-technical investor audience (relevant given the PO's deadline context)
-A minimal web form can be built in an afternoon with no framework — but if the team decides on real-time updates (e.g. running total as you add expenses), that adds meaningful complexity
-Copy/paste-friendly output (e.g. a summary you can drop into WhatsApp) came up as a desired feature in informal user conversations
-
-
-🧪 QA Engineer
-Knows edge cases and has seen similar tools fail.
-
-A competing free tool (Splitwise) is well known to the target audience — QA has used it and can describe its behavior as a reference point if the team gets stuck on scope decisions
-The "circular debt" case (A owes B, B owes C, C owes A) is where most implementations produce wrong or confusing output — this should be a required test case
-Rounding errors across multiple people can cause the total to be off by a cent — needs an explicit decision on who absorbs the rounding remainder
-
-
-🔁 Scrum Master
-Knows team process context, not domain knowledge.
-
-The team has a tendency to over-discuss the algorithm and under-specify the output format — this has caused late-stage rework before
-Two team members (backend and frontend) have previously disagreed about whether the frontend should do any calculation logic or keep it strictly in the backend; this may resurface
-The PO is sometimes slow to make calls under pressure — if discussions stall, try timeboxing decisions explicitly
+Editing any of these files changes the `run_id` and invalidates previously collected results.

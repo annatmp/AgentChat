@@ -1,7 +1,22 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from .agents import Agent
-from .conversation import Message, StopCondition, TurnSelector, PostProcessor, call_agent
+from .conversation import (
+    AgentCallError,
+    Message,
+    PostProcessor,
+    StopCondition,
+    TurnSelector,
+    call_agent_recorded,
+)
+from .records import KIND_SUMMARY, CallRecord
+
+# Turn selectors live in agent_chat/strategies/ so a run config can name one.
+# Re-exported here because the README and existing notebooks import it from
+# policies.
+from .strategies import round_robin  # noqa: F401
 
 
 # --- Stop conditions ---
@@ -26,8 +41,28 @@ def stop_on_keyword(*keywords: str) -> StopCondition:
 
 # --- Post processors ---
 
-def summarize(agent: Agent, stream: bool = False, prompt_file: str = "prompts/summarize_prompt.txt") -> PostProcessor:
-    """Summarize the full conversation using the given agent."""
+@dataclass
+class SummaryOutcome:
+    """Where `summarize` puts its result, since a PostProcessor returns None."""
+    text: str | None = None
+    call: CallRecord | None = None
+    error: str | None = None
+
+
+def summarize(
+    agent: Agent,
+    outcome: SummaryOutcome | None = None,
+    stream: bool = False,
+    prompt_file: str = "prompts/summarize_prompt.txt",
+) -> PostProcessor:
+    """
+    Summarize the full conversation into the final backlog artifact.
+
+    `agent` must be the neutral summarizer from the run config — a fixed model,
+    identical across every condition, and never a participant. Using a
+    participant here means the agent that wrote the plan also writes the
+    artifact being judged.
+    """
     with open(prompt_file) as f:
         prompt_template = f.read()
 
@@ -39,19 +74,25 @@ def summarize(agent: Agent, stream: bool = False, prompt_file: str = "prompts/su
         )]
         print("\n--- SUMMARY ---\n", flush=True)
         on_token = (lambda t: print(t, end="", flush=True)) if stream else None
-        result = call_agent(agent, synthetic_history, system=agent.role, on_token=on_token)
+        try:
+            result = call_agent_recorded(
+                agent, synthetic_history, system=agent.role,
+                kind=KIND_SUMMARY, on_token=on_token,
+                temperature=agent.temperature,
+            )
+        except AgentCallError as exc:
+            # The transcript is already collected; losing the summary should not
+            # discard the run, so it is recorded as an error and the run goes on.
+            if outcome is not None:
+                outcome.error = exc.record.error
+                outcome.call = exc.record
+            print(f"[summary failed: {exc.record.error}]", flush=True)
+            return
         if not stream:
-            print(result)
+            print(result.text)
         print()
+        if outcome is not None:
+            outcome.text = result.text
+            outcome.call = result.record
+
     return run
-
-
-# --- Turn selectors ---
-
-def round_robin(*names: str) -> TurnSelector:
-    """Cycle through agents in the given order."""
-    order = list(names)
-    def select(history: list[Message], agents: dict[str, Agent]) -> str:
-        agent_turns = sum(1 for m in history if m.speaker != "user")
-        return order[agent_turns % len(order)]
-    return select
