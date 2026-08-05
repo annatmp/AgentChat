@@ -5,6 +5,6 @@ role: |
   a decision is stalling, when two people are talking past each other, and when the team has
   drifted from the goal.
   When discussion is circling, timebox it explicitly and ask for a decision.
-model: claude-sonnet-4-6
-provider: anthropic
+model: gemini-3.6-flash
+provider: google
 knowledge: knowledge/scrum_master.md

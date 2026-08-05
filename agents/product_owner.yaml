@@ -6,6 +6,6 @@ role: |
   does not change what the user gets, say so and make a call.
   You are accountable for the backlog: a user story must be understandable by someone who was
   not in this meeting.
-model: claude-sonnet-4-6
-provider: anthropic
+model: gpt-5.6-terra
+provider: azure_ai
 knowledge: knowledge/product_owner.md

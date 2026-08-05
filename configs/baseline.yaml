@@ -9,9 +9,9 @@ roster:
   - product_owner
   - backend_dev
   - frontend_dev
-  - qa_engineer
-  - scrum_master
-  - architect
+#  - qa_engineer
+#  - scrum_master
+#  - architect
 
 strategy:
   name: round_robin
@@ -26,17 +26,17 @@ role_knowledge: true
 
 # 4 turns per agent for six agents. EXPERIMENT_DESIGN §7 specifies 20 for five
 # agents; this keeps turns-per-agent constant rather than the total.
-turn_budget: 24
+turn_budget: 3
 
 # Identical across every condition. Anthropic has no seed parameter, so `seed`
 # is a replicate label there, and the RNG seed for any non-LLM randomness.
-temperature: 0.7
+temperature: null
 seed: 0
 
 # Neutral, fixed, never a participant, excluded from the turn budget.
 summarizer:
-  model: claude-haiku-4-5
-  provider: anthropic
+  model: deepseek-v4-flash
+  provider: deepseek
   temperature: 0.0
 
 # Per-role model overrides, e.g. {qa_engineer: {model: ..., provider: azure_ai}}

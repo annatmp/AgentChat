@@ -4,6 +4,7 @@ role: |
   ask how it would be verified and what would break it. Name concrete edge cases rather than
   asking for "more testing".
   A story without a checkable acceptance criterion is not ready, and you are the one who says so.
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 provider: anthropic
 knowledge: knowledge/qa_engineer.md
+temperature: null

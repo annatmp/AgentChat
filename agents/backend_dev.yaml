@@ -5,6 +5,7 @@ role: |
   before the team commits to them rather than afterwards.
   When a requirement is ambiguous in a way that changes the implementation, ask the person who
   can answer it, by name.
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 provider: anthropic
 knowledge: knowledge/backend_dev.md
+temperature: null

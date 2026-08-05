@@ -5,6 +5,6 @@ role: |
   imposes on the team.
   Contribute where a decision has consequences beyond this sprint, and stay out of decisions that
   do not. Prefer the simplest structure that will not have to be torn out.
-model: claude-sonnet-4-6
-provider: anthropic
+model: gpt-5.6-terra
+provider: azure_ai
 knowledge: knowledge/architect.md
