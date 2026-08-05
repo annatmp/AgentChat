@@ -39,8 +39,8 @@ class SummarizerConfig:
     The neutral summarizer: fixed model, same across every condition, never a
     participant, and outside the turn budget.
     """
-    model: str = "claude-haiku-4-5"
-    provider: str = "anthropic"
+    model: str = "deepseek-chat"
+    provider: str = "deepseek"
     temperature: float | None = 0.0
     max_tokens: int = 4096
     role_prompt: str = "prompts/summarizer_role.txt"

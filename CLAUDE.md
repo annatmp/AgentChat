@@ -100,16 +100,25 @@ want for a meeting simulation.
 
 ### Providers
 
-Three, selected by the `provider` field on an agent:
+Six, selected by the `provider` field on an agent:
 
 | provider       | client            | env vars |
 | -------------- | ----------------- | -------- |
 | `anthropic`    | `anthropic.Anthropic` | `ANTHROPIC_API_KEY` |
 | `azure_openai` | `AzureOpenAI`     | `AZURE_OPENAI_ENDPOINT` (bare base URL), `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_API_VERSION` |
 | `azure_ai`     | `OpenAI` (compat) | `AZURE_AI_ENDPOINT` (**must** end in `/openai/v1/`), `AZURE_AI_API_KEY` |
+| `google`       | `OpenAI` (compat) | `GOOGLE_API_KEY` — base URL is fixed (`agent_chat.conversation.GOOGLE_BASE_URL`), unlike Azure there's no per-resource endpoint to configure |
+| `mistral`      | `OpenAI` (compat) | `MISTRAL_API_KEY` — base URL is fixed (`agent_chat.conversation.MISTRAL_BASE_URL`), Mistral's own API rather than an Azure AI Foundry deployment |
+| `deepseek`     | `OpenAI` (compat) | `DEEPSEEK_API_KEY` — base URL is fixed (`agent_chat.conversation.DEEPSEEK_BASE_URL`) |
 
-Adding a provider means one branch in `call_agent_recorded` and one row in the
-README table.
+`azure_openai`, `azure_ai`, `google`, `mistral` and `deepseek` all speak the
+same OpenAI-compatible `chat.completions` API — only the client (base URL +
+auth) differs — so they share `_call_openai_compatible` and the
+`_OPENAI_COMPATIBLE_CLIENTS` dispatch dict in `conversation.py`. Adding a
+provider on that API means one entry in that dict, one branch in
+`model_check.py`'s `_list_ids`, and one row in the README table. A provider
+with a genuinely different wire format (like `anthropic`) needs its own
+`_call_*` function and its own branch in `call_agent_recorded`.
 
 `call_agent_recorded` is the real entry point: it returns a `CallResult`
 (`.text` + `.record`) carrying tokens, cost, latency, retries and the resolved
@@ -164,10 +173,14 @@ retried — it's recorded as an errored call instead.
 - **`pricing.py` has no Azure rates** — those are per-subscription and `model` is
   a deployment name there. Runs on those panels report `cost_usd: null` and
   `cost_complete: false`. Token counts are still exact.
-- **"Pin model snapshot IDs" isn't a thing for current Anthropic models.**
-  `claude-sonnet-4-6` and `claude-haiku-4-5` are already complete, fixed strings;
-  appending a date suffix 404s. Reproducibility comes from recording
-  `model_resolved` (what the API says it served) per call instead.
+- **"Pin model snapshot IDs" isn't a thing for current Anthropic models, but
+  which form is fixed varies per model — check, don't assume.** `claude-sonnet-4-6`
+  is bare and 404s with a date suffix appended. `claude-haiku-4-5` is the
+  opposite: there is no bare form, only `claude-haiku-4-5-20251001` resolves.
+  Run `uv run main.py <config> --check-models` (calls `models.list()` per
+  provider, no generation tokens spent) before trusting a model string in a new
+  config or agent YAML. Reproducibility comes from recording `model_resolved`
+  (what the API says it served) per call instead.
 - **Runs recorded before the P0 rework** (the three `logs/conversation_*.log`
   files) predate structured records, the six-role roster and the neutral
   summarizer. They are not comparable with anything produced now.

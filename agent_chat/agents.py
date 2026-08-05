@@ -7,7 +7,7 @@ import yaml
 
 # Providers `call_agent` knows how to reach. Validated at config load so a typo
 # fails before any API call rather than partway through a run.
-PROVIDERS = ("anthropic", "azure_openai", "azure_ai")
+PROVIDERS = ("anthropic", "azure_openai", "azure_ai", "google", "mistral", "deepseek")
 
 # Models that reject `temperature` (and `top_p`/`top_k`) with a 400. Pairing one
 # with a temperature is a config error, caught at load time instead of surfacing

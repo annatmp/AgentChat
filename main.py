@@ -23,6 +23,7 @@ from pathlib import Path
 from agent_chat import strategies
 from agent_chat.config import ConfigError, ResolvedRun, load
 from agent_chat.conversation import Conversation
+from agent_chat.model_check import check_models
 from agent_chat.policies import SummaryOutcome, max_turns, summarize
 from agent_chat.records import RunRecord, SelectorLog, compute_totals, git_sha
 
@@ -51,6 +52,10 @@ def _parse_args(argv=None):
     parser.add_argument("--dry-run", action="store_true",
                         help="resolve the config, hash inputs and print the run_id "
                              "without making any API calls")
+    parser.add_argument("--check-models", action="store_true",
+                        help="call each provider's models.list() to confirm every "
+                             "configured model exists, then exit — no generation "
+                             "tokens spent")
     parser.add_argument("--force", action="store_true",
                         help="run even if a record for this run_id already exists")
     return parser.parse_args(argv)
@@ -92,6 +97,21 @@ def _print_dry_run(run: ResolvedRun) -> None:
         print(f"  {digest[:12]}  {path}")
     print("\nresolved config:")
     print(json.dumps(run.config_dict(), indent=2, sort_keys=True))
+
+
+def _print_model_check(run: ResolvedRun) -> bool:
+    """Print models.list() results for every configured model. Returns True iff none are missing."""
+    results = check_models(run.agents, run.summarizer)
+    ok = True
+    for r in results:
+        if r.status == "ok":
+            print(f"  {r.provider:12} {r.model:30} OK")
+        elif r.status == "not_found":
+            print(f"  {r.provider:12} {r.model:30} NOT FOUND")
+            ok = False
+        else:
+            print(f"  {r.provider:12} {r.model:30} unverified ({r.detail})")
+    return ok
 
 
 def _execute(run: ResolvedRun) -> RunRecord:
@@ -171,6 +191,10 @@ def main(argv=None) -> int:
     except (ConfigError, FileNotFoundError, ValueError) as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
+
+    if args.check_models:
+        ok = _print_model_check(run)
+        return 0 if ok else 1
 
     if args.dry_run:
         _print_dry_run(run)

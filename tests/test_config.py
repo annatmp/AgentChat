@@ -13,7 +13,7 @@ BASELINE = "configs/baseline.yaml"
 def test_baseline_config_resolves():
     run = load(BASELINE)
     assert len(run.agents) == 6
-    assert run.summarizer.model == "claude-haiku-4-5"
+    assert run.summarizer.model == "deepseek-chat"
     assert run.summarizer.name not in run.agents      # neutral by construction
     assert len(run.knowledge) == 6                    # every role has private context
     assert run.run_id and len(run.run_id) == 12

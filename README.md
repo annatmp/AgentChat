@@ -64,6 +64,15 @@ AZURE_OPENAI_API_VERSION=2024-02-01   # optional, defaults to 2024-02-01
 # Must include /openai/v1/ — the URL is used as-is
 AZURE_AI_ENDPOINT=https://your-resource.openai.azure.com/openai/v1/
 AZURE_AI_API_KEY=your_key_here
+
+# Google — Gemini, via its OpenAI-compatible endpoint (fixed URL, no per-resource endpoint needed)
+GOOGLE_API_KEY=your_key_here
+
+# Mistral — La Plateforme, via its OpenAI-compatible endpoint (fixed URL, not Azure AI Foundry)
+MISTRAL_API_KEY=your_key_here
+
+# DeepSeek — via its OpenAI-compatible endpoint (fixed URL)
+DEEPSEEK_API_KEY=your_key_here
 ```
 
 ## Usage
@@ -71,12 +80,15 @@ AZURE_AI_API_KEY=your_key_here
 ```bash
 uv run main.py                                   # configs/baseline.yaml
 uv run main.py configs/baseline.yaml
-uv run main.py configs/baseline.yaml --dry-run    # resolve + hash only, no API calls
-uv run main.py configs/baseline.yaml --force      # redo a run whose record exists
+uv run main.py configs/baseline.yaml --dry-run       # resolve + hash only, no API calls
+uv run main.py configs/baseline.yaml --check-models  # models.list() per provider, no generation tokens
+uv run main.py configs/baseline.yaml --force         # redo a run whose record exists
 uv run pytest
 ```
 
 `--dry-run` is the cheap way to check a config: it prints the `run_id`, the resolved roster, and the hash of every input file without spending a token. A run whose `runs/<run_id>.json` already exists is skipped, so re-running a config is idempotent.
+
+`--check-models` calls `models.list()` once per provider in use and checks every configured agent/summarizer model against it — a typo'd or invalid model ID (e.g. a date-suffixed current Anthropic model, which 404s) is caught before any generation call. It costs no conversation tokens. Not every Azure AI Foundry deployment exposes `models.list()`; when it doesn't, that provider's models are reported `unverified` rather than failed.
 
 ## Run configs
 
@@ -135,7 +147,7 @@ knowledge: knowledge/product_owner.md
 | `name`        | Unique identifier used in turn selectors and history; must match the filename    |
 | `role`        | System prompt appended to the shared conversation system prompt                  |
 | `model`       | Model name or Azure deployment name                                             |
-| `provider`    | `anthropic`, `azure_openai` or `azure_ai`                                       |
+| `provider`    | `anthropic`, `azure_openai`, `azure_ai`, `google`, `mistral` or `deepseek`      |
 | `max_tokens`  | Max tokens per response (default: 4096)                                         |
 | `temperature` | Per-agent default; the run config's `temperature` wins when set                  |
 | `knowledge`   | Path to this role's private context, appended to its system prompt only          |
@@ -175,4 +187,4 @@ Models you can use during this session:
 | Llama-4-Scout-17B-16E-Instruct | azure_ai        |
 | Mistral-Large-3                | azure_ai        |
 
-Anthropic model IDs (`claude-sonnet-4-6`, `claude-haiku-4-5`) are already fixed, complete strings — do not append a date suffix, it will 404. The string the API reports serving is recorded per call as `model_resolved`.
+Anthropic model IDs are fixed, complete strings, but *which* form that is varies per model — don't assume. `claude-sonnet-4-6` is bare and 404s with a date suffix; `claude-haiku-4-5` is the opposite, it only resolves as `claude-haiku-4-5-20251001`. Run `uv run main.py <config> --check-models` to verify against the live catalog rather than guessing. The string the API reports serving is recorded per call as `model_resolved`.

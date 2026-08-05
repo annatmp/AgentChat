@@ -70,6 +70,62 @@ def _anthropic_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], max_retries=0)
 
 
+# Fixed, not per-resource like the Azure endpoints, since Gemini's
+# OpenAI-compatibility layer lives at one public URL for every account.
+GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+
+@cache
+def _google_client() -> OpenAI:
+    """OpenAI-compatible client for Google's Gemini API."""
+    return OpenAI(
+        base_url=GOOGLE_BASE_URL,
+        api_key=os.environ["GOOGLE_API_KEY"],
+        max_retries=0,
+    )
+
+
+# Fixed, like GOOGLE_BASE_URL — Mistral's La Plateforme API, not a per-resource
+# Azure AI Foundry deployment.
+MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
+
+
+@cache
+def _mistral_client() -> OpenAI:
+    """OpenAI-compatible client for Mistral's own API (La Plateforme)."""
+    return OpenAI(
+        base_url=MISTRAL_BASE_URL,
+        api_key=os.environ["MISTRAL_API_KEY"],
+        max_retries=0,
+    )
+
+
+# Fixed, like the other direct-vendor URLs above. DeepSeek's own docs use this
+# exact base_url (no /v1 suffix — their REST paths don't have one).
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+
+
+@cache
+def _deepseek_client() -> OpenAI:
+    """OpenAI-compatible client for DeepSeek's own API."""
+    return OpenAI(
+        base_url=DEEPSEEK_BASE_URL,
+        api_key=os.environ["DEEPSEEK_API_KEY"],
+        max_retries=0,
+    )
+
+
+# Every non-Anthropic provider speaks the OpenAI-compatible chat.completions
+# API; only the client (base URL + auth) differs between them.
+_OPENAI_COMPATIBLE_CLIENTS: dict[str, Callable[[], OpenAI]] = {
+    "azure_openai": _azure_openai_client,
+    "azure_ai": _azure_ai_client,
+    "google": _google_client,
+    "mistral": _mistral_client,
+    "deepseek": _deepseek_client,
+}
+
+
 def _build_history(agent: Agent, history: list[Message]) -> list[dict]:
     """
     Map shared conversation history to the messages list for one agent.
@@ -174,7 +230,7 @@ def _call_openai_compatible(
     seed: int | None, emit: Callable[[str], None], emitted: list[str],
     record: CallRecord, max_attempts: int, on_retry,
 ) -> str:
-    client = _azure_openai_client() if agent.provider == "azure_openai" else _azure_ai_client()
+    client = _OPENAI_COMPATIBLE_CLIENTS[agent.provider]()
     payload = [{"role": "system", "content": system}] + messages
 
     def attempt(with_optional: bool):
@@ -267,7 +323,7 @@ def call_agent_recorded(
                 agent, messages, system, resolved_temperature,
                 emit, emitted, record, max_attempts, on_retry,
             )
-        elif agent.provider in ("azure_openai", "azure_ai"):
+        elif agent.provider in _OPENAI_COMPATIBLE_CLIENTS:
             text = _call_openai_compatible(
                 agent, messages, system, resolved_temperature, seed,
                 emit, emitted, record, max_attempts, on_retry,
