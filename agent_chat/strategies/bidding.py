@@ -64,7 +64,6 @@ def urgency_auctioning(*names: str, log: SelectorLog | None = None, knowledge: d
         bid_prompt = load_bid_prompt(params)
 
         ## todo add which turn and how many left
-        §
         bid_max_tokens = int(params.get("bid_max_tokens", 64))
         bids: dict[str, Bid] = {}
 
