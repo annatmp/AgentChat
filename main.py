@@ -127,8 +127,6 @@ def _execute(run: ResolvedRun) -> RunRecord:
     )
     conversation.user(run.task_prompt)
 
-    run.config.strategy.params['max_turns'] = run.config.turn_budget
-
     turn_selector = strategies.build(
         run.config.strategy.name,
         run.config.strategy.params,
