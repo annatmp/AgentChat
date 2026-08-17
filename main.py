@@ -137,6 +137,7 @@ def _execute(run: ResolvedRun) -> RunRecord:
         log=selector_log,
         knowledge=run.knowledge,
         system_prompt=run.system_prompt,
+        turn_budget=run.config.turn_budget,
     )
     outcome = SummaryOutcome()
 

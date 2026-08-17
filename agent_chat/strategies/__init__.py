@@ -45,6 +45,7 @@ def build(
     log: SelectorLog | None = None,
     knowledge: dict[str, str] | None = None,
     system_prompt: str = "",
+    turn_budget: int = 0,
 ) -> TurnSelector:
     """Construct the named strategy. `rng` is seeded from the run config."""
     try:
@@ -53,4 +54,7 @@ def build(
         raise ValueError(
             f"unknown strategy {name!r}. Available: {', '.join(sorted(REGISTRY))}"
         ) from None
-    return builder(params or {}, roster=roster, rng=rng or random.Random(0), log=log, knowledge=knowledge or {}, system_prompt=system_prompt)
+    return builder(
+        params or {}, roster=roster, rng=rng or random.Random(0), log=log,
+        knowledge=knowledge or {}, system_prompt=system_prompt, turn_budget=turn_budget,
+    )

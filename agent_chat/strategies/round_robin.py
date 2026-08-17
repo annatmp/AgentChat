@@ -25,7 +25,7 @@ def round_robin(*names: str, log: SelectorLog | None = None) -> TurnSelector:
 
 def build_round_robin(
     params: dict, *, roster: dict[str, Agent], rng: random.Random, log: SelectorLog | None,
-    knowledge: dict[str, str] | None = None, system_prompt: str = "",
+    knowledge: dict[str, str] | None = None, system_prompt: str = "", turn_budget: int = 0,
 ) -> TurnSelector:
     order = list(params.get("order") or roster)
     unknown = [name for name in order if name not in roster]

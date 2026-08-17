@@ -33,7 +33,7 @@ def parse_bid(bid_str: str) -> Bid:
         Bid: A Bid object with the parsed level and reason.
     """
 
-   
+
     level_str = re.search(_LEVEL_RE, bid_str)
     reason_str = re.search(_REASON_RE, bid_str)
 
@@ -54,16 +54,19 @@ def parse_bid(bid_str: str) -> Bid:
     return Bid(level=level_as_int, reason=reason_str.group(1) if reason_str else "No reason provided.")
 
 
-def urgency_auctioning(*names: str, log: SelectorLog | None = None, knowledge: dict[str,str], system_prompt: str = "", params: dict = {}) -> TurnSelector:
+def urgency_auctioning(
+    *names: str, log: SelectorLog | None = None, knowledge: dict[str, str],
+    system_prompt: str = "", params: dict = {}, rng: random.Random, turn_budget: int = 0,
+) -> TurnSelector:
 
     def select(history: list[Message], agents: dict[str, Agent]):
+        agent_turns_so_far = sum(1 for m in history if m.speaker != "user")
 
-        if len(history) == 0 and 'starting_agent' in params:
+        if agent_turns_so_far == 0 and 'starting_agent' in params:
             return params['starting_agent']
-        
-        bid_prompt = load_bid_prompt(params)
 
-        ## todo add which turn and how many left
+        turns_remaining = turn_budget - agent_turns_so_far
+        bid_prompt = load_bid_prompt(params).format(turns_remaining=turns_remaining)
         bid_max_tokens = int(params.get("bid_max_tokens", 64))
         bids: dict[str, Bid] = {}
 
@@ -82,28 +85,35 @@ def urgency_auctioning(*names: str, log: SelectorLog | None = None, knowledge: d
         print("Bids received:")
         for name, bid in bids.items():
             print(f"Agent: {name}, Level: {bid.level}, Reason: {bid.reason}, Parsed: {bid.parsed}")
-
         print('---')
 
         sorted_bids = sorted(bids.items(), key=lambda x: x[1].level, reverse=True)
-
-        if sorted_bids:
-            max_level = sorted_bids[0][1].level
-            highest_bids = [name for name, bid in sorted_bids if bid.level == max_level]
-            winner = random.choice(highest_bids)
+        max_level = sorted_bids[0][1].level
+        highest_bids = [name for name, bid in sorted_bids if bid.level == max_level]
+        winner = rng.choice(highest_bids)
 
         if log:
-            log.note(strategy="urgency_auctioning", bids={name: bid.level for name, bid in bids.items()}, winner=winner)
+            log.note(
+                strategy="urgency_auctioning",
+                bids=[
+                    {"agent": n, "level": b.level, "reason": b.reason, "parsed": b.parsed}
+                    for n, b in bids.items()
+                ],
+                turns_remaining=turns_remaining,
+                winner=winner,
+            )
 
         return winner
-        
+
     return select
 
 
 def build_urgency_auctioning(
     params: dict, *, roster: dict[str, Agent], rng: random.Random, log: SelectorLog | None,
-    knowledge: dict[str, str] | None = None, system_prompt: str = "",
+    knowledge: dict[str, str] | None = None, system_prompt: str = "", turn_budget: int = 0,
 ) -> TurnSelector:
 
-    return urgency_auctioning(*roster, log=log, knowledge=knowledge or {}, system_prompt=system_prompt, params=params)
-    
+    return urgency_auctioning(
+        *roster, log=log, knowledge=knowledge or {}, system_prompt=system_prompt,
+        params=params, rng=rng, turn_budget=turn_budget,
+    )
