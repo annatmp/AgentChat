@@ -91,7 +91,7 @@ Independent Judge
 - Mistral Medium mistral-medium-2505
 
 Summarizer:
-- DeepSeak
+- Deepseek
 
 ## Limitations
 

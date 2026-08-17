@@ -435,28 +435,32 @@ class Conversation:
     ) -> list[Message]:
         """Run until stop_condition is met, using turn_selector to pick each speaker."""
         produced = []
-        while not stop_condition(self.history):
-            name = turn_selector(self.history, self.agents)
-            rationale = selector_log.drain() if selector_log else None
+        try:
+            while not stop_condition(self.history):
+                name = turn_selector(self.history, self.agents)
+                rationale = selector_log.drain() if selector_log else None
+                if selector_log:
+                    self.selector_calls.extend(selector_log.take_calls())
+                self._check_speaker(name)
+                if stream:
+                    print(f"\n[{name.upper()}]\n", flush=True)
+                    msg = self.step(
+                        name,
+                        on_token=lambda t: print(t, end="", flush=True),
+                        selector=rationale,
+                    )
+                    print()
+                else:
+                    msg = self.step(name, selector=rationale)
+                produced.append(msg)
+        finally:
             if selector_log:
+                # Catches calls a stop_condition or turn_selector made but never
+                # got to drain through the loop above — either the final call
+                # that exited the loop normally, or one that raised (e.g. a
+                # facilitator exhausting its retries). Either way those calls
+                # cost money and must not vanish from the run's totals.
                 self.selector_calls.extend(selector_log.take_calls())
-            self._check_speaker(name)
-            if stream:
-                print(f"\n[{name.upper()}]\n", flush=True)
-                msg = self.step(
-                    name,
-                    on_token=lambda t: print(t, end="", flush=True),
-                    selector=rationale,
-                )
-                print()
-            else:
-                msg = self.step(name, selector=rationale)
-            produced.append(msg)
-        if selector_log:
-            # The stop_condition call that ended the loop never went through the
-            # per-turn drain above (turn_selector never ran that iteration), so
-            # any calls it made would otherwise vanish from the run's totals.
-            self.selector_calls.extend(selector_log.take_calls())
         for processor in (post_processors or []):
             processor(self.history)
         return produced

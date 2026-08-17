@@ -27,12 +27,16 @@ from agent_chat.records import SelectorLog
 
 from agent_chat.strategies.round_robin import build_round_robin, round_robin  # noqa: F401 (re-exported for policies.py)
 from agent_chat.strategies.bidding import build_urgency_auctioning, urgency_auctioning  # noqa: F401 (re-exported for policies.py)
+from agent_chat.strategies.obligation_first import build_obligation_first, obligation_first  # noqa: F401 (re-exported for policies.py)
+from agent_chat.strategies.facilitator import build_facilitator, facilitator  # noqa: F401 (re-exported for policies.py)
 
 StrategyBuilder = Callable[..., TurnSelector]
 
 REGISTRY: dict[str, StrategyBuilder] = {
     "round_robin": build_round_robin,
     "bidding": build_urgency_auctioning,
+    "obligation_first": build_obligation_first,
+    "facilitator": build_facilitator,
 }
 
 
