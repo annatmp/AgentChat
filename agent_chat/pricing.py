@@ -22,9 +22,21 @@ PRICING: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-6": (3.00, 15.00),
     "claude-haiku-4-5-20251001": (1.00, 5.00),
     "claude-fable-5": (10.00, 50.00),
-    # Azure OpenAI / Azure AI Foundry deployments are priced per subscription
-    # and the `model` field there is a deployment name, so they are deliberately
-    # absent. Add your own rates here to get cost totals for those panels.
+    # Everything below is a rough estimate, not a vendor rate card: these model
+    # names (agents/*.yaml, configs/*.yaml) postdate this file's knowledge, so
+    # there is no published price to copy. Good enough for relative cost
+    # comparison between runs, not for a real invoice. Replace with the actual
+    # published rate as soon as one exists.
+    "gemini-3.6-flash": (0.30, 2.50),      # google — flash tier, cheap/fast
+    "deepseek-v4-flash": (0.30, 1.20),     # deepseek — DeepSeek's flash tier has stayed well below frontier pricing
+    # azure_ai deployment names are normally per-subscription aliases (see
+    # note below), but this repo's agents use "gpt-5.6-terra" as a stable
+    # model id across roles, so it gets an approximate frontier-tier price too.
+    "gpt-5.6-terra": (5.00, 20.00),
+    # Azure OpenAI / Azure AI Foundry deployments are otherwise priced per
+    # subscription and the `model` field there is a deployment name, so they
+    # are deliberately absent. Add your own rates here to get cost totals for
+    # those panels.
 }
 
 # Cache multipliers relative to the input rate (Anthropic pricing model).

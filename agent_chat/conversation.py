@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+
 import time
 from dataclasses import dataclass, field
 from functools import cache
@@ -356,6 +357,7 @@ TurnSelector = Callable[[list[Message], dict[str, Agent]], str]
 PostProcessor = Callable[[list[Message]], None]
 
 
+
 @dataclass
 class Conversation:
     agents: dict[str, Agent]
@@ -375,10 +377,7 @@ class Conversation:
         """Inject a human message into the shared history."""
         self.history.append(Message(speaker="user", content=content))
 
-    def _system_for(self, agent: Agent) -> str:
-        private = self.knowledge.get(agent.name)
-        private_block = f"{KNOWLEDGE_HEADER}\n{private}" if private else None
-        return "\n\n".join(filter(None, [self.system_prompt, agent.role, private_block]))
+
 
     def _note_retry(self, attempt: int, delay: float, exc: BaseException) -> None:
         # Printed so the retry is visible in the terminal and the tee'd log;
@@ -402,7 +401,7 @@ class Conversation:
         agent = self.agents[agent_name]
         try:
             result = call_agent_recorded(
-                agent, self.history, self._system_for(agent),
+                agent, self.history, system_for(agent, self.system_prompt, self.knowledge.get(agent.name, "")),
                 kind=KIND_TURN, on_token=on_token,
                 temperature=self.temperature, seed=self.seed,
                 on_retry=self._note_retry,
@@ -456,3 +455,7 @@ class Conversation:
         for processor in (post_processors or []):
             processor(self.history)
         return produced
+
+def system_for(agent: Agent, system_prompt: str, private_knowledge: str) -> str:
+    private_block = f"{KNOWLEDGE_HEADER}\n{private_knowledge}" if private_knowledge else None
+    return "\n\n".join(filter(None, [system_prompt, agent.role, private_block]))
