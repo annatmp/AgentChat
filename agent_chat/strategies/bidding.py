@@ -55,7 +55,7 @@ def parse_bid(bid_str: str) -> Bid:
 
 
 def urgency_auctioning(
-    *names: str, log: SelectorLog | None = None, knowledge: dict[str, str],
+    roster: dict[str, Agent], *, log: SelectorLog | None = None, knowledge: dict[str, str],
     system_prompt: str = "", params: dict = {}, rng: random.Random, turn_budget: int = 0,
 ) -> TurnSelector:
 
@@ -70,7 +70,7 @@ def urgency_auctioning(
         bid_max_tokens = int(params.get("bid_max_tokens", 64))
         bids: dict[str, Bid] = {}
 
-        for agent in agents.values():
+        for agent in roster.values():
             agent_knowledge = knowledge.get(agent.name, "")
             agent_system_prompt = system_for(agent, private_knowledge=agent_knowledge, system_prompt=system_prompt)
             bid_agent = replace(agent, max_tokens=bid_max_tokens)
@@ -80,12 +80,6 @@ def urgency_auctioning(
             if log:
                 log.add_call(result.record)
             bids[agent.name] = parse_bid(result.text)
-
-        print('---')
-        print("Bids received:")
-        for name, bid in bids.items():
-            print(f"Agent: {name}, Level: {bid.level}, Reason: {bid.reason}, Parsed: {bid.parsed}")
-        print('---')
 
         sorted_bids = sorted(bids.items(), key=lambda x: x[1].level, reverse=True)
         max_level = sorted_bids[0][1].level
@@ -114,6 +108,6 @@ def build_urgency_auctioning(
 ) -> TurnSelector:
 
     return urgency_auctioning(
-        *roster, log=log, knowledge=knowledge or {}, system_prompt=system_prompt,
+        roster, log=log, knowledge=knowledge or {}, system_prompt=system_prompt,
         params=params, rng=rng, turn_budget=turn_budget,
     )

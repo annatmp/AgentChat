@@ -55,6 +55,8 @@ class RunConfig:
     task_prompt: str = "prompts/prompt_complex.txt"
     system_prompt: str = "prompts/system_prompt.txt"
     summarize_prompt: str = "prompts/summarize_prompt.txt"
+    consensus_stop: bool = True        # any agent can end the meeting early once every agent agrees
+    consensus_prompt: str = "prompts/consensus_prompt.txt"
     turn_budget: int = 24
     seed: int = 0
     temperature: float | None = 0.7   # overrides per-agent temperature when set
@@ -72,6 +74,7 @@ class ResolvedRun:
     knowledge: dict[str, str]
     system_prompt: str
     task_prompt: str
+    consensus_prompt: str  # "" when config.consensus_stop is False
     file_hashes: dict[str, str]
     run_id: str
     rng: random.Random
@@ -196,10 +199,12 @@ def _run_id_payload(config: RunConfig, agents: dict[str, Agent],
         "seed": config.seed,
         "temperature": config.temperature,
         "role_knowledge": config.role_knowledge,
+        "consensus_stop": config.consensus_stop,
         "prompts": {
             "task": config.task_prompt,
             "system": config.system_prompt,
             "summarize": config.summarize_prompt,
+            "consensus": config.consensus_prompt if config.consensus_stop else None,
         },
         "agents": {
             name: {
@@ -240,6 +245,7 @@ def resolve(config: RunConfig) -> ResolvedRun:
 
     system_prompt = _read(config.system_prompt, "system_prompt").strip()
     task_prompt = _read(config.task_prompt, "task_prompt")
+    consensus_prompt = _read(config.consensus_prompt, "consensus_prompt") if config.consensus_stop else ""
     summarize_template = _read(config.summarize_prompt, "summarize_prompt")
     if "{transcript}" not in summarize_template:
         raise ConfigError(f"{config.summarize_prompt}: must contain a {{transcript}} placeholder")
@@ -268,6 +274,7 @@ def resolve(config: RunConfig) -> ResolvedRun:
         config.summarizer.role_prompt,
         *(str(Path(config.agents_dir) / f"{n}.yaml") for n in config.roster),
         *(a.knowledge for a in agents.values() if config.role_knowledge and a.knowledge),
+        *([config.consensus_prompt] if config.consensus_stop else []),
     ]
     file_hashes = {Path(p).as_posix(): file_sha256(p) for p in hashed}
 
@@ -279,6 +286,7 @@ def resolve(config: RunConfig) -> ResolvedRun:
         knowledge=knowledge,
         system_prompt=system_prompt,
         task_prompt=task_prompt,
+        consensus_prompt=consensus_prompt,
         file_hashes=file_hashes,
         run_id=run_id,
         rng=random.Random(config.seed),

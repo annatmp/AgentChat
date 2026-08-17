@@ -19,7 +19,7 @@ import subprocess
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # What a CallRecord.kind can be. The conversation/overhead split in `totals`
 # depends on this: turns are the conversation, selector calls are what a
@@ -83,8 +83,14 @@ class SelectorLog:
     _calls: list[CallRecord] = field(default_factory=list)
 
     def note(self, **fields) -> None:
-        """Record the rationale for the choice about to be made."""
-        self._pending = dict(fields)
+        """
+        Record the rationale for the choice about to be made.
+
+        Merges into any pending fields rather than replacing them, so a
+        consensus-stop check and a turn selector can both call this within the
+        same turn without one clobbering the other's rationale.
+        """
+        self._pending = {**(self._pending or {}), **fields}
 
     def add_call(self, record: CallRecord) -> None:
         """Record an LLM call the selector made (a bid, a think step)."""
@@ -110,6 +116,9 @@ class RunRecord:
     finished_at: str | None = None
     turns: list[TurnRecord] = field(default_factory=list)
     selector_calls: list[CallRecord] = field(default_factory=list)
+    # The final consensus vote round: {"stopped": bool, "votes": [...]}, or
+    # None when consensus_stop was disabled or never reached agent turn 1.
+    consensus: dict | None = None
     summary: str | None = None
     summary_call: CallRecord | None = None
     totals: dict = field(default_factory=dict)

@@ -161,6 +161,7 @@ Registered by name so a run config can select one. A strategy is just `(history,
 | Strategy      | Params  | Description                                            |
 | ------------- | ------- | ------------------------------------------------------ |
 | `round_robin` | `order` | Cycles through agents; defaults to the roster order    |
+| `bidding`     | `bid_prompt`, `bid_max_tokens`, `starting_agent` | Every agent runs a private think step scoring 0-4 how urgent it is for them to speak; highest bid wins, ties broken by the run's seeded RNG. Bid calls are recorded as selector overhead, not conversation spend. `starting_agent` skips the auction on the first turn. |
 
 ### Stop conditions (`agent_chat/policies.py`)
 

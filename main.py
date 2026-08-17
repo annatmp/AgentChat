@@ -24,7 +24,7 @@ from agent_chat import strategies
 from agent_chat.config import ConfigError, ResolvedRun, load
 from agent_chat.conversation import Conversation
 from agent_chat.model_check import check_models
-from agent_chat.policies import SummaryOutcome, max_turns, summarize
+from agent_chat.policies import ConsensusOutcome, SummaryOutcome, consensus_stop, max_turns, stop_when_any, summarize
 from agent_chat.records import RunRecord, SelectorLog, compute_totals, git_sha
 
 DEFAULT_CONFIG = "configs/baseline.yaml"
@@ -138,6 +138,20 @@ def _execute(run: ResolvedRun) -> RunRecord:
         turn_budget=run.config.turn_budget,
     )
     outcome = SummaryOutcome()
+    consensus_outcome = ConsensusOutcome()
+
+    # Every condition gets a shared turn-budget ceiling; consensus_stop layers
+    # an early exit on top of it when the run config enables it.
+    stop_conditions = [max_turns(run.config.turn_budget)]
+    if run.config.consensus_stop:
+        stop_conditions.append(consensus_stop(
+            run.agents,
+            vote_prompt_file=run.config.consensus_prompt,
+            knowledge=run.knowledge,
+            system_prompt=run.system_prompt,
+            log=selector_log,
+            outcome=consensus_outcome,
+        ))
 
     started_at = datetime.now(timezone.utc).isoformat()
     clock = time.perf_counter()
@@ -145,7 +159,7 @@ def _execute(run: ResolvedRun) -> RunRecord:
     try:
         conversation.run(
             turn_selector=turn_selector,
-            stop_condition=max_turns(run.config.turn_budget),
+            stop_condition=stop_when_any(*stop_conditions),
             stream=True,
             post_processors=[summarize(
                 run.summarizer, outcome, stream=True,
@@ -159,6 +173,17 @@ def _execute(run: ResolvedRun) -> RunRecord:
         aborted = f"aborted after {len(conversation.turns)} turns: {type(exc).__name__}: {exc}"
         print(f"\n{aborted}", flush=True)
     wall_clock = time.perf_counter() - clock
+
+    if consensus_outcome.stopped:
+        print(f"\nmeeting ended early by consensus after {len(conversation.turns)} turns "
+              f"(turn budget was {run.config.turn_budget})", flush=True)
+    elif consensus_outcome.votes is not None:
+        print(f"\nmeeting ran to its turn budget ({run.config.turn_budget} turns); "
+              f"last consensus check did not reach unanimity", flush=True)
+    if consensus_outcome.votes is not None:
+        for vote in consensus_outcome.votes:
+            marker = "STOP" if vote["stop"] else "continue"
+            print(f"  - {vote['agent']}: {marker} — {vote['reason']}", flush=True)
 
     errors = list(conversation.errors)
     if aborted:
@@ -175,6 +200,8 @@ def _execute(run: ResolvedRun) -> RunRecord:
         finished_at=datetime.now(timezone.utc).isoformat(),
         turns=conversation.turns,
         selector_calls=conversation.selector_calls,
+        consensus={"stopped": consensus_outcome.stopped, "votes": consensus_outcome.votes}
+        if consensus_outcome.votes is not None else None,
         summary=outcome.text,
         summary_call=outcome.call,
         totals=compute_totals(

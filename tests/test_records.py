@@ -2,6 +2,7 @@ import json
 
 from agent_chat.records import (
     CallRecord,
+    SelectorLog,
     TurnRecord,
     Usage,
     canonical_json,
@@ -68,3 +69,12 @@ def test_unpriced_models_do_not_report_a_complete_cost():
 
     assert totals["conversation"]["cost_complete"] is False
     assert totals["conversation"]["cost_usd"] == 0.5   # the known half, not a fake zero
+
+
+def test_selector_log_note_merges_across_calls_within_one_turn():
+    # A consensus-stop check and a turn selector can both call .note() before
+    # the same drain; neither should clobber the other's rationale.
+    log = SelectorLog()
+    log.note(strategy="round_robin", position=0)
+    log.note(consensus_stop=False)
+    assert log.drain() == {"strategy": "round_robin", "position": 0, "consensus_stop": False}

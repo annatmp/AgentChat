@@ -452,6 +452,11 @@ class Conversation:
             else:
                 msg = self.step(name, selector=rationale)
             produced.append(msg)
+        if selector_log:
+            # The stop_condition call that ended the loop never went through the
+            # per-turn drain above (turn_selector never ran that iteration), so
+            # any calls it made would otherwise vanish from the run's totals.
+            self.selector_calls.extend(selector_log.take_calls())
         for processor in (post_processors or []):
             processor(self.history)
         return produced
