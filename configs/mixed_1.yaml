@@ -1,0 +1,48 @@
+# Mixed team, rotation 1 of 3 — Q3 in tmp/Decisions.md. Roles paired
+# (product_owner+backend_dev / frontend_dev+qa_engineer / scrum_master+architect),
+# each pair on a different family this rotation. Across mixed_1/2/3, each pair
+# gets each family exactly once and each config stays balanced (2 roles per
+# family) — see Decisions.md § Q3 for why.
+#
+# This rotation: PO+Backend = Anthropic, Frontend+QA = Azure/GPT, SM+Architect = Google.
+
+name: mixed_1
+
+roster:
+  - product_owner
+  - backend_dev
+  - frontend_dev
+  - qa_engineer
+  - scrum_master
+  - architect
+
+panel:
+  product_owner: {model: claude-sonnet-5, provider: anthropic}
+  backend_dev: {model: claude-sonnet-5, provider: anthropic}
+  frontend_dev: {model: gpt-5.6-terra, provider: azure_ai}
+  qa_engineer: {model: gpt-5.6-terra, provider: azure_ai}
+  scrum_master: {model: gemini-3.6-flash, provider: google}
+  architect: {model: gemini-3.6-flash, provider: google}
+
+strategy:
+  name: bidding
+  params:
+    bid_prompt: prompts/bid_prompt.txt
+    starting_agent: product_owner
+
+task_prompt: prompts/prompt_complex.txt
+system_prompt: prompts/system_prompt.txt
+summarize_prompt: prompts/summarize_prompt.txt
+
+role_knowledge: true
+turn_budget: 24
+
+temperature: null
+seed: 0
+
+summarizer:
+  model: deepseek-v4-flash
+  provider: deepseek
+  temperature: 0.0
+
+output_dir: runs
