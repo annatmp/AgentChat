@@ -1,0 +1,52 @@
+# Baseline condition: fixed-order turn taking, homogeneous panel, complex task.
+# Everything here is recorded with the run; changing any of it changes the run_id.
+
+name: baseline
+
+# Explicit roster. `load_agents` would pick up every YAML in agents/, which would
+# silently change what a run contains as role files are added.
+roster:
+  - product_owner
+  - backend_dev
+  - frontend_dev
+#  - qa_engineer
+#  - scrum_master
+#  - architect
+
+# strategy:
+#   name: round_robin
+#   params: {}     # `order` defaults to the roster order above
+
+strategy:
+  name: bidding
+  params:
+    bid_prompt: prompts/bid_prompt.txt
+    starting_agent: product_owner
+
+task_prompt: prompts/prompt_complex.txt
+system_prompt: prompts/system_prompt.txt
+summarize_prompt: prompts/summarize_prompt.txt
+
+# Factor D in EXPERIMENT_DESIGN §1 — set false to run the same panel blind.
+role_knowledge: true
+
+# 4 turns per agent for six agents. EXPERIMENT_DESIGN §7 specifies 20 for five
+# agents; this keeps turns-per-agent constant rather than the total.
+turn_budget: 5
+
+# Identical across every condition. Anthropic has no seed parameter, so `seed`
+# is a replicate label there, and the RNG seed for any non-LLM randomness.
+temperature: null
+seed: 0
+
+# Neutral, fixed, never a participant, excluded from the turn budget.
+summarizer:
+  model: deepseek-v4-flash
+  provider: deepseek
+  temperature: 0.0
+
+# Per-role model overrides, e.g. {qa_engineer: {model: ..., provider: azure_ai}}
+# for a heterogeneous panel. null = every agent uses its own YAML.
+panel: null
+
+output_dir: runs

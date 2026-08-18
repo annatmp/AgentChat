@@ -1,0 +1,4 @@
+# Fixture for test_config.py: a typo'd key must be rejected, not ignored.
+name: typo-fixture
+roster: [product_owner]
+turn_bugdet: 24

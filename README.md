@@ -1,31 +1,43 @@
 # agent-chat
 
-A lightweight Python framework for running structured multi-agent conversations using LLMs. Agents are defined in YAML, take turns according to configurable policies, and a post-processor can summarize the result.
+A lightweight Python framework for running structured multi-agent conversations using LLMs. Agents are defined in YAML, take turns according to a configurable turn-taking strategy, and every run is recorded as structured JSON so runs can be compared.
 
-The included example simulates a **scrum planning meeting**: a `planner` and a `critic` collaborate on a problem defined in `prompt.txt`, then the planner produces a final summary of agreed user stories.
+The playground is a **Scrum refinement meeting**: six role-based agents turn a business request into a backlog of user stories. This repo backs a conference talk on multi-agent turn-taking — see [talk.md](talk.md).
+
+> **Contributors:** start with [CLAUDE.md](CLAUDE.md) (architecture, conventions, known rough edges — also the context file for AI coding sessions), then [TODO.md](TODO.md) for the backlog and [docs/EXPERIMENT_DESIGN.md](docs/EXPERIMENT_DESIGN.md) for the evaluation methodology.
 
 ## How it works
 
-1. Agents are loaded from YAML files in the `agents/` directory.
-2. A `Conversation` is created with those agents and a shared system prompt.
-3. A user prompt is injected (from `prompt.txt`).
-4. `conv.run()` drives the conversation using:
+1. A **run config** (`configs/*.yaml`) names everything that shapes the run: roster, strategy, prompts, turn budget, temperature, seed.
+2. `resolve()` loads that roster, hashes every input file, and derives a `run_id` from the lot.
+3. The task prompt is injected as a user message, and `conv.run()` drives the conversation using:
    - a **turn selector** (e.g. `round_robin`) to decide who speaks next
    - a **stop condition** (e.g. `max_turns`) to end the loop
    - optional **post-processors** (e.g. `summarize`) that run after the loop
+4. Two artifacts come out: `runs/<run_id>.json` (the data) and `logs/*.log` (the transcript as it looked in the terminal).
 
 ## Project structure
 
 ```
 agent_chat/
-  agents.py       # Agent dataclass + YAML loader
-  conversation.py # Conversation loop, message history, LLM calls
-  policies.py     # Turn selectors, stop conditions, post-processors
-agents/
-  planner.yaml    # Strategic planner agent definition
-  critic.yaml     # Constructive critic agent definition
-main.py           # Entry point
-prompt.txt        # The problem/task given to the agents
+  agents.py        # Agent dataclass + YAML loaders
+  config.py        # run config -> ResolvedRun (roster, prompts, hashes, run_id)
+  conversation.py  # provider clients, history mapping, Conversation loop
+  policies.py      # stop conditions, post-processors
+  pricing.py       # token prices -> per-call cost
+  records.py       # run record schema, totals, provenance
+  retry.py         # exponential backoff on 429/5xx
+  sanitize.py      # strips echoed speaker tags on ingest
+  strategies/      # turn selectors + name->factory registry
+agents/            # one YAML per role
+knowledge/         # one file per role: private context only that agent sees
+configs/           # run configs
+prompts/           # system, task and summarizer prompts
+runs/              # structured run records — the data
+logs/              # terminal transcripts
+tests/             # pytest over the pure functions
+judge.ipynb        # LLM-as-a-judge over log files, prints a leaderboard
+main.py            # entry point
 ```
 
 ## Setup
@@ -52,48 +64,106 @@ AZURE_OPENAI_API_VERSION=2024-02-01   # optional, defaults to 2024-02-01
 # Must include /openai/v1/ — the URL is used as-is
 AZURE_AI_ENDPOINT=https://your-resource.openai.azure.com/openai/v1/
 AZURE_AI_API_KEY=your_key_here
+
+# Google — Gemini, via its OpenAI-compatible endpoint (fixed URL, no per-resource endpoint needed)
+GOOGLE_API_KEY=your_key_here
+
+# Mistral — La Plateforme, via its OpenAI-compatible endpoint (fixed URL, not Azure AI Foundry)
+MISTRAL_API_KEY=your_key_here
+
+# DeepSeek — via its OpenAI-compatible endpoint (fixed URL)
+DEEPSEEK_API_KEY=your_key_here
 ```
 
 ## Usage
 
-Edit `prompt.txt` with the problem you want the agents to discuss, then run:
-
 ```bash
-uv run main.py
+uv run main.py                                   # configs/baseline.yaml
+uv run main.py configs/baseline.yaml
+uv run main.py configs/baseline.yaml --dry-run       # resolve + hash only, no API calls
+uv run main.py configs/baseline.yaml --check-models  # models.list() per provider, no generation tokens
+uv run main.py configs/baseline.yaml --force         # redo a run whose record exists
+uv run pytest
 ```
 
-Output is streamed to the terminal. Each agent's turn is printed as it arrives, followed by a summary at the end.
+`--dry-run` is the cheap way to check a config: it prints the `run_id`, the resolved roster, and the hash of every input file without spending a token. A run whose `runs/<run_id>.json` already exists is skipped, so re-running a config is idempotent.
+
+`--check-models` calls `models.list()` once per provider in use and checks every configured agent/summarizer model against it — a typo'd or invalid model ID (e.g. a date-suffixed current Anthropic model, which 404s) is caught before any generation call. It costs no conversation tokens. Not every Azure AI Foundry deployment exposes `models.list()`; when it doesn't, that provider's models are reported `unverified` rather than failed.
+
+## Run configs
+
+Everything that could change a conversation's outcome lives here, so it can be recorded and varied. See [configs/baseline.yaml](configs/baseline.yaml).
+
+| Field                            | Description                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------ |
+| `roster`                         | Explicit list of agent names. Required — nothing is picked up implicitly.       |
+| `strategy`                       | `{name, params}`; `name` must be in the strategy registry                      |
+| `task_prompt` / `system_prompt`  | Paths to the prompt files                                                      |
+| `summarize_prompt`               | Path to the summarizer template; must contain `{transcript}`                    |
+| `role_knowledge`                 | Whether agents get their private context from `knowledge/`                      |
+| `turn_budget`                    | Total agent turns (the summary is excluded)                                     |
+| `temperature`                    | Overrides per-agent temperature. `null` omits it from requests.                 |
+| `seed`                           | Passed to OpenAI-compatible endpoints; a replicate label on Anthropic           |
+| `summarizer`                     | The neutral summarizer's model/provider/temperature                             |
+| `panel`                          | Per-role `{model, provider, max_tokens, temperature}` overrides                  |
+| `output_dir`                     | Where run records are written (default `runs/`)                                 |
+
+Config errors — an unknown provider, a roster name with no YAML, a temperature on a model that rejects one — fail at load time with exit code 2, rather than surfacing as a 400 partway through a grid.
+
+## Run records
+
+One JSON file per run, at `runs/<run_id>.json`. `run_id` is a hash of the resolved config plus the SHA-256 of every prompt, agent and knowledge file used, so two records with the same id came from the same setup, and editing a prompt gives you a new id.
+
+| Field                     | Description                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------- |
+| `config` / `file_hashes`  | The fully resolved config and a hash per input file                              |
+| `git_sha`                 | The commit the run was executed at                                               |
+| `turns[]`                 | Per turn: speaker, content, `content_raw` if sanitised, and the call record       |
+| `turns[].call`            | Tokens in/out, cache tokens, cost, latency, retries, resolved model, stop reason |
+| `turns[].selector`        | Why the selector picked this speaker (bids, agenda state, …)                      |
+| `selector_calls[]`        | LLM calls a strategy made on its own behalf, counted as overhead not conversation |
+| `summary` / `summary_call`| The judged artifact and what producing it cost                                    |
+| `totals`                  | conversation / selector overhead / summary / failed, plus participation per agent  |
+| `errors[]`                | Recorded, not retried away — a strategy's robustness is a finding                  |
+
+Models with no entry in [`pricing.py`](agent_chat/pricing.py) report `cost_usd: null` and set `cost_complete: false`, so a missing price never reads as a free run.
 
 ## Defining agents
 
 Each agent is a YAML file in `agents/`:
 
 ```yaml
-name: planner
+name: product_owner
 role: |
-  You are a strategic planner who breaks down complex problems into
-  clear, actionable steps. Be concise and structured.
+  You are the Product Owner. You own the business goal and the user's
+  perspective, and you are the one who decides scope.
 model: claude-sonnet-4-6
-provider: anthropic # or azure_openai
+provider: anthropic
+knowledge: knowledge/product_owner.md
 ```
 
-| Field        | Description                                                     |
-| ------------ | --------------------------------------------------------------- |
-| `name`       | Unique identifier used in turn selectors and history            |
-| `role`       | System prompt appended to the shared conversation system prompt |
-| `model`      | Model name or Azure deployment name                             |
-| `provider`   | `anthropic` or `azure_openai`                                   |
-| `max_tokens` | Max tokens per response (default: 4096)                         |
+| Field         | Description                                                                    |
+| ------------- | ------------------------------------------------------------------------------ |
+| `name`        | Unique identifier used in turn selectors and history; must match the filename    |
+| `role`        | System prompt appended to the shared conversation system prompt                  |
+| `model`       | Model name or Azure deployment name                                             |
+| `provider`    | `anthropic`, `azure_openai`, `azure_ai`, `google`, `mistral` or `deepseek`      |
+| `max_tokens`  | Max tokens per response (default: 4096)                                         |
+| `temperature` | Per-agent default; the run config's `temperature` wins when set                  |
+| `knowledge`   | Path to this role's private context, appended to its system prompt only          |
 
-## Policies
+## Policies and strategies
 
-### Turn selectors
+### Turn selectors (`agent_chat/strategies/`)
 
-| Policy                | Description                              |
-| --------------------- | ---------------------------------------- |
-| `round_robin(*names)` | Cycles through the named agents in order |
+Registered by name so a run config can select one. A strategy is just `(history, agents) -> agent name`.
 
-### Stop conditions
+| Strategy      | Params  | Description                                            |
+| ------------- | ------- | ------------------------------------------------------ |
+| `round_robin` | `order` | Cycles through agents; defaults to the roster order    |
+| `bidding`     | `bid_prompt`, `bid_max_tokens`, `starting_agent` | Every agent runs a private think step scoring 0-4 how urgent it is for them to speak; highest bid wins, ties broken by the run's seeded RNG. Bid calls are recorded as selector overhead, not conversation spend. `starting_agent` skips the auction on the first turn. |
+
+### Stop conditions (`agent_chat/policies.py`)
 
 | Policy                       | Description                                            |
 | ---------------------------- | ------------------------------------------------------ |
@@ -102,22 +172,9 @@ provider: anthropic # or azure_openai
 
 ### Post-processors
 
-| Policy             | Description                                                  |
-| ------------------ | ------------------------------------------------------------ |
-| `summarize(agent)` | Sends the full transcript to an agent and asks for a summary |
-
-## Customising `main.py`
-
-```python
-conv.run(
-    turn_selector=round_robin("planner", "critic"),
-    stop_condition=max_turns(6),          # run for more turns
-    stream=True,
-    post_processors=[summarize(agents["planner"], stream=True)],
-)
-```
-
-Swap in any combination of turn selectors, stop conditions, and post-processors, or implement your own — each is just a callable with a simple signature defined in `policies.py`.
+| Policy                        | Description                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------- |
+| `summarize(agent, outcome)`   | Sends the transcript to the neutral summarizer and captures the result       |
 
 ## Model selection
 
@@ -130,3 +187,5 @@ Models you can use during this session:
 | mistral-medium-2505            | azure_ai        |
 | Llama-4-Scout-17B-16E-Instruct | azure_ai        |
 | Mistral-Large-3                | azure_ai        |
+
+Anthropic model IDs are fixed, complete strings, but *which* form that is varies per model — don't assume. `claude-sonnet-4-6` is bare and 404s with a date suffix; `claude-haiku-4-5` is the opposite, it only resolves as `claude-haiku-4-5-20251001`. Run `uv run main.py <config> --check-models` to verify against the live catalog rather than guessing. The string the API reports serving is recorded per call as `model_resolved`.
