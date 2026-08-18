@@ -1,0 +1,9 @@
+This is a private check-in, not a message to the group. Nobody else in the meeting will see your answer — it is only used to decide whether the meeting continues.
+
+Consider the discussion so far. Has it reached a good, complete plan, with nothing left that would meaningfully improve it? Or is there still something worth saying — a gap, an open question, a concern nobody has raised?
+
+The meeting only ends once everyone agrees it should. If you are unsure, or you have anything left to contribute, vote to continue — it costs little to keep going, but ending too early can leave real gaps in the plan.
+
+Respond with exactly two lines, nothing else:
+VOTE: <STOP or CONTINUE>
+REASON: <one short sentence>

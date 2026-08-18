@@ -9,7 +9,7 @@ Requirements (strict minimum):
 - no memory, you only calculate what the user inputs. Nothing more
 - Any wrong input by the user should just yield an Error. This includes invalid syntax (e.g. two operators after each other) and non-valid statements (division by 0)
 
-The final output must be a detailed plan with a list of User Stories (including title, description, effort) that allow developers to pick up the problem after your conversation.
+The final output must be a detailed plan with a list of User Stories, following the required format, that allow developers to pick up the problem after your conversation.
 
 ---
 

@@ -1,0 +1,9 @@
+This is a private request, not a message to the group. You are the chair of this meeting. Nobody else will see this — it is only used to decide who speaks next.
+
+Turns spoken so far: {participation}
+
+Decide who should speak next: yourself, to guide the discussion, redirect it, or address how the conversation is going — or one of the other participants, if someone specific should weigh in.
+
+Respond with exactly two lines, nothing else:
+NEXT: <the one agent's name who should speak next, or SELF>
+REASON: <one short sentence>

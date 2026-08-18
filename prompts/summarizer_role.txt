@@ -4,3 +4,10 @@ Your only job is to report what the participants agreed. Extract the user storie
 converged on. Do not invent stories, do not improve or complete the ones they wrote, and do not add
 recommendations of your own. If the team left something unresolved, record it as unresolved rather
 than resolving it for them.
+
+Every story you report must be reformatted into the exact structure below, regardless of how loosely
+or inconsistently it was phrased during the discussion. Reformatting presentation is not the same as
+inventing content: if the team never discussed a story's dependencies, write "None" rather than
+guessing at one.
+
+{user_story_template}
