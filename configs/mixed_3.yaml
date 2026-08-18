@@ -1,0 +1,46 @@
+# Mixed team, rotation 3 of 3 — Q3 in tmp/Decisions.md. See mixed_1.yaml for
+# the full rationale; this completes the cycle so each pair has now been on
+# each family exactly once across mixed_1/2/3.
+#
+# This rotation: PO+Backend = Google, Frontend+QA = Anthropic, SM+Architect = Azure/GPT.
+
+name: mixed_3
+
+roster:
+  - product_owner
+  - backend_dev
+  - frontend_dev
+  - qa_engineer
+  - scrum_master
+  - architect
+
+panel:
+  product_owner: {model: gemini-3.6-flash, provider: google}
+  backend_dev: {model: gemini-3.6-flash, provider: google}
+  frontend_dev: {model: claude-sonnet-5, provider: anthropic}
+  qa_engineer: {model: claude-sonnet-5, provider: anthropic}
+  scrum_master: {model: gpt-5.6-terra, provider: azure_ai}
+  architect: {model: gpt-5.6-terra, provider: azure_ai}
+
+strategy:
+  name: bidding
+  params:
+    bid_prompt: prompts/bid_prompt.txt
+    starting_agent: product_owner
+
+task_prompt: prompts/prompt_complex.txt
+system_prompt: prompts/system_prompt.txt
+summarize_prompt: prompts/summarize_prompt.txt
+
+role_knowledge: true
+turn_budget: 24
+
+temperature: null
+seed: 0
+
+summarizer:
+  model: deepseek-v4-flash
+  provider: deepseek
+  temperature: 0.0
+
+output_dir: runs

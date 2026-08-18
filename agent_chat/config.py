@@ -19,7 +19,7 @@ from pathlib import Path
 
 import yaml
 
-from agent_chat.agents import PROVIDERS, TEMPERATURE_REJECTED, Agent, load_roster
+from agent_chat.agents import PROVIDERS, TEMPERATURE_REJECTED, Agent, load_agent, load_roster
 from agent_chat.records import SCHEMA_VERSION, compute_run_id, file_sha256
 
 
@@ -55,12 +55,26 @@ class RunConfig:
     task_prompt: str = "prompts/prompt_complex.txt"
     system_prompt: str = "prompts/system_prompt.txt"
     summarize_prompt: str = "prompts/summarize_prompt.txt"
+    # Injected into both system_prompt and summarizer.role_prompt wherever each
+    # contains a {user_story_template} placeholder — one shared source for the
+    # story format both the conversation and the summarizer must follow, so the
+    # two can't drift out of sync with each other.
+    user_story_template: str = "prompts/user_story_template.txt"
     consensus_stop: bool = True        # any agent can end the meeting early once every agent agrees
     consensus_prompt: str = "prompts/consensus_prompt.txt"
     turn_budget: int = 24
     seed: int = 0
     temperature: float | None = 0.7   # overrides per-agent temperature when set
     role_knowledge: bool = True       # factor D in EXPERIMENT_DESIGN §1
+    # Solo baseline: union every role's own knowledge onto the roster, discovered
+    # from agents_dir rather than a separately maintained list, so it can never
+    # drift from what the team actually knows.
+    all_role_knowledge: bool = False
+    # Solo baseline: inject "REVIEW ROUND N" framing before each turn. Round 1 gets
+    # its own template — there is nothing yet to "continue refining."
+    review_rounds: bool = False
+    review_round_template: str = "REVIEW ROUND {n}: continue refining the plan from where you left off."
+    review_round_first_template: str = "REVIEW ROUND 1: come up with an initial plan for the request above — there is nothing to refine yet."
     panel: dict | None = None         # {role: {model, provider, ...}} overrides
     agents_dir: str = "agents"
     output_dir: str = "runs"
@@ -199,12 +213,17 @@ def _run_id_payload(config: RunConfig, agents: dict[str, Agent],
         "seed": config.seed,
         "temperature": config.temperature,
         "role_knowledge": config.role_knowledge,
+        "all_role_knowledge": config.all_role_knowledge,
         "consensus_stop": config.consensus_stop,
+        "review_rounds": config.review_rounds,
+        "review_round_template": config.review_round_template if config.review_rounds else None,
+        "review_round_first_template": config.review_round_first_template if config.review_rounds else None,
         "prompts": {
             "task": config.task_prompt,
             "system": config.system_prompt,
             "summarize": config.summarize_prompt,
             "consensus": config.consensus_prompt if config.consensus_stop else None,
+            "user_story_template": config.user_story_template,
         },
         "agents": {
             name: {
@@ -243,16 +262,47 @@ def resolve(config: RunConfig) -> ResolvedRun:
             if agent.knowledge:
                 knowledge[name] = _read(agent.knowledge, f"{name}.knowledge").strip()
 
-    system_prompt = _read(config.system_prompt, "system_prompt").strip()
+    # Solo baseline: union every role's knowledge onto the roster, discovered from
+    # agents_dir itself rather than a hand-typed list — always the same source the
+    # team reads from, never a separately maintained copy that could drift.
+    _lens_word_overrides = {"qa": "QA"}
+    def _lens_label(stem: str) -> str:
+        return " ".join(_lens_word_overrides.get(w, w.title()) for w in stem.split("_"))
+
+    all_role_knowledge_paths: list[str] = []
+    if config.all_role_knowledge:
+        discovered = [load_agent(p) for p in sorted(Path(config.agents_dir).glob("*.yaml"))]
+        all_role_knowledge_paths = sorted({a.knowledge for a in discovered if a.knowledge})
+        lenses = [
+            f"## Lens: {_lens_label(Path(kpath).stem)}\n"
+            f"{_read(kpath, f'all_role_knowledge:{kpath}').strip()}"
+            for kpath in all_role_knowledge_paths
+        ]
+        union_text = "\n\n".join(lenses)
+        for name in agents:
+            knowledge[name] = "\n\n".join(filter(None, [knowledge.get(name), union_text]))
+
+    user_story_template = _read(config.user_story_template, "user_story_template").strip()
+
+    system_prompt_raw = _read(config.system_prompt, "system_prompt").strip()
+    if "{user_story_template}" not in system_prompt_raw:
+        raise ConfigError(f"{config.system_prompt}: must contain a {{user_story_template}} placeholder")
+    system_prompt = system_prompt_raw.format(user_story_template=user_story_template)
+
     task_prompt = _read(config.task_prompt, "task_prompt")
     consensus_prompt = _read(config.consensus_prompt, "consensus_prompt") if config.consensus_stop else ""
     summarize_template = _read(config.summarize_prompt, "summarize_prompt")
     if "{transcript}" not in summarize_template:
         raise ConfigError(f"{config.summarize_prompt}: must contain a {{transcript}} placeholder")
 
+    summarizer_role_raw = _read(config.summarizer.role_prompt, "summarizer.role_prompt").strip()
+    if "{user_story_template}" not in summarizer_role_raw:
+        raise ConfigError(
+            f"{config.summarizer.role_prompt}: must contain a {{user_story_template}} placeholder"
+        )
     summarizer = Agent(
         name="summarizer",
-        role=_read(config.summarizer.role_prompt, "summarizer.role_prompt").strip(),
+        role=summarizer_role_raw.format(user_story_template=user_story_template),
         model=config.summarizer.model,
         provider=config.summarizer.provider,
         max_tokens=config.summarizer.max_tokens,
@@ -271,10 +321,11 @@ def resolve(config: RunConfig) -> ResolvedRun:
     # Hash every input file, so results can be told apart after a prompt tweak.
     hashed = [
         config.system_prompt, config.task_prompt, config.summarize_prompt,
-        config.summarizer.role_prompt,
+        config.summarizer.role_prompt, config.user_story_template,
         *(str(Path(config.agents_dir) / f"{n}.yaml") for n in config.roster),
         *(a.knowledge for a in agents.values() if config.role_knowledge and a.knowledge),
         *([config.consensus_prompt] if config.consensus_stop else []),
+        *all_role_knowledge_paths,
     ]
     file_hashes = {Path(p).as_posix(): file_sha256(p) for p in hashed}
 

@@ -15,16 +15,60 @@ load_dotenv()
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Optional: trace every LLM call (full prompt, response, latency, tokens) to a
+# local Phoenix instance for inspection — `uvx arize-phoenix serve`, then set
+# PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006 in .env. Purely observational:
+# never affects run_id or a run's output. Silent no-op unless both the env var is
+# set and `uv sync --group tracing` has been run.
+#
+# Two things are done explicitly here rather than relying on the library's own
+# "convenient" defaults, both verified live against arize-phoenix 15.1.0 after
+# each silently exported nothing instead of raising:
+#   - `endpoint` must include the /v1/traces path. register()'s own env-var
+#     pickup (i.e. leaving `endpoint` unset) resolves to an unrelated OTel SDK
+#     default (localhost:4317/gRPC) instead of this value; passing the bare host
+#     without the path 405s on every export.
+#   - `auto_instrument=True` did not activate the openai/anthropic instrumentors
+#     in this environment — instrumenting both classes explicitly is what
+#     actually put spans in Phoenix when this was tested against a live run.
+_phoenix_endpoint = os.environ.get("PHOENIX_COLLECTOR_ENDPOINT")
+if _phoenix_endpoint:
+    try:
+        from openinference.instrumentation.anthropic import AnthropicInstrumentor
+        from openinference.instrumentation.openai import OpenAIInstrumentor
+        from phoenix.otel import register
+
+        if not _phoenix_endpoint.rstrip("/").endswith("/v1/traces"):
+            _phoenix_endpoint = _phoenix_endpoint.rstrip("/") + "/v1/traces"
+        _tracer_provider = register(project_name="agent-chat", endpoint=_phoenix_endpoint)
+        AnthropicInstrumentor().instrument(tracer_provider=_tracer_provider)
+        OpenAIInstrumentor().instrument(tracer_provider=_tracer_provider)
+    except ImportError:
+        print(
+            "PHOENIX_COLLECTOR_ENDPOINT is set but tracing packages aren't installed — "
+            "run `uv sync --group tracing` to enable tracing, or unset it to skip.",
+            file=sys.stderr,
+        )
+
 from agent_chat import strategies
 from agent_chat.config import ConfigError, ResolvedRun, load
 from agent_chat.conversation import Conversation
 from agent_chat.model_check import check_models
-from agent_chat.policies import ConsensusOutcome, SummaryOutcome, consensus_stop, max_turns, stop_when_any, summarize
+from agent_chat.policies import (
+    ConsensusOutcome,
+    SummaryOutcome,
+    consensus_stop,
+    max_turns,
+    review_round_context,
+    stop_when_any,
+    summarize,
+)
 from agent_chat.records import RunRecord, SelectorLog, compute_totals, git_sha
 
 DEFAULT_CONFIG = "configs/baseline.yaml"
@@ -153,6 +197,12 @@ def _execute(run: ResolvedRun) -> RunRecord:
             outcome=consensus_outcome,
         ))
 
+    # Solo baseline only: "REVIEW ROUND N" framing injected before each turn.
+    turn_context = (
+        review_round_context(run.config.review_round_template, run.config.review_round_first_template)
+        if run.config.review_rounds else None
+    )
+
     started_at = datetime.now(timezone.utc).isoformat()
     clock = time.perf_counter()
     aborted: str | None = None
@@ -166,6 +216,7 @@ def _execute(run: ResolvedRun) -> RunRecord:
                 prompt_file=run.config.summarize_prompt,
             )],
             selector_log=selector_log,
+            turn_context=turn_context,
         )
     except Exception as exc:
         # Recorded rather than retried to success: robustness differences

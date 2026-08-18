@@ -1,0 +1,36 @@
+# Solo baseline, Anthropic panel — Q1 in tmp/Decisions.md. One agent, the same
+# total turn budget as the team it's compared against, reviewing the request
+# across repeated "REVIEW ROUND N" passes.
+#
+# turn_budget is a placeholder: it must match whatever the real homogeneous
+# Anthropic team config ends up using (P2 — not written yet), for "turn budget
+# parity" per Decisions.md. Update this once that config exists.
+
+name: solo_anthropic
+
+roster:
+  - solo
+
+strategy:
+  name: round_robin      # trivial for a one-agent roster; no real selection to make
+  params: {}
+
+all_role_knowledge: true   # union of every role's knowledge/*.md, not just solo's own (it has none)
+review_rounds: true
+
+task_prompt: prompts/prompt_complex.txt
+system_prompt: prompts/system_prompt.txt
+summarize_prompt: prompts/summarize_prompt.txt
+
+role_knowledge: true
+turn_budget: 24
+
+temperature: null
+seed: 0
+
+summarizer:
+  model: deepseek-v4-flash
+  provider: deepseek
+  temperature: 0.0
+
+output_dir: runs

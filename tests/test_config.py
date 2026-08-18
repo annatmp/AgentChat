@@ -23,6 +23,63 @@ def test_run_id_is_deterministic():
     assert load(BASELINE).run_id == load(BASELINE).run_id
 
 
+def test_user_story_template_is_injected_into_system_prompt_and_summarizer_role():
+    run = load(BASELINE)
+    template = open("prompts/user_story_template.txt").read().strip()
+    assert template in run.system_prompt
+    assert template in run.summarizer.role
+
+
+def test_system_prompt_without_the_placeholder_fails_at_load(tmp_path):
+    bare = tmp_path / "system_prompt.txt"
+    bare.write_text("You are in a meeting.")
+    config = load_run_config(BASELINE)
+    config.system_prompt = str(bare)
+    with pytest.raises(ConfigError, match="user_story_template"):
+        resolve(config)
+
+
+def test_summarizer_role_without_the_placeholder_fails_at_load(tmp_path):
+    bare = tmp_path / "summarizer_role.txt"
+    bare.write_text("You are a neutral scribe.")
+    config = load_run_config(BASELINE)
+    config.summarizer.role_prompt = str(bare)
+    with pytest.raises(ConfigError, match="user_story_template"):
+        resolve(config)
+
+
+def test_all_role_knowledge_unions_every_roles_file():
+    run = load("configs/solo_anthropic.yaml")
+    assert set(run.agents) == {"solo"}
+    text = run.knowledge["solo"]
+    for label in ("Architect", "Backend Dev", "Frontend Dev", "Product Owner", "QA Engineer", "Scrum Master"):
+        assert f"## Lens: {label}" in text
+
+
+def test_all_role_knowledge_adds_to_not_replaces_the_agents_own_knowledge():
+    config = load_run_config(BASELINE)
+    config.all_role_knowledge = True
+    run = resolve(config)
+    for name in run.agents:
+        # Each baseline agent still has its own knowledge, plus the union on top.
+        assert run.knowledge[name].startswith(open(run.agents[name].knowledge).read().strip()[:50])
+        assert "## Lens:" in run.knowledge[name]
+
+
+def test_all_role_knowledge_off_by_default_changes_nothing():
+    baseline = load(BASELINE)
+    config = load_run_config(BASELINE)
+    config.all_role_knowledge = True
+    toggled = resolve(config)
+    assert baseline.run_id != toggled.run_id
+
+
+def test_review_rounds_changes_the_run_id():
+    config = load_run_config(BASELINE)
+    config.review_rounds = True
+    assert resolve(config).run_id != load(BASELINE).run_id
+
+
 def test_run_id_ignores_relabelling_but_tracks_content():
     """A renamed config is the same experimental cell; a changed seed is not."""
     renamed = load_run_config(BASELINE)

@@ -1,0 +1,44 @@
+# Homogeneous team, Azure AI / GPT panel — Q1/Q2 in tmp/Decisions.md. All six
+# roles on the same model family. Compare against homogeneous_anthropic and
+# homogeneous_google for the strategy-vs-family question.
+
+name: homogeneous_azure_gpt
+
+roster:
+  - product_owner
+  - backend_dev
+  - frontend_dev
+  - qa_engineer
+  - scrum_master
+  - architect
+
+panel:
+  product_owner: {model: gpt-5.6-terra, provider: azure_ai}
+  backend_dev: {model: gpt-5.6-terra, provider: azure_ai}
+  frontend_dev: {model: gpt-5.6-terra, provider: azure_ai}
+  qa_engineer: {model: gpt-5.6-terra, provider: azure_ai}
+  scrum_master: {model: gpt-5.6-terra, provider: azure_ai}
+  architect: {model: gpt-5.6-terra, provider: azure_ai}
+
+strategy:
+  name: bidding
+  params:
+    bid_prompt: prompts/bid_prompt.txt
+    starting_agent: product_owner
+
+task_prompt: prompts/prompt_complex.txt
+system_prompt: prompts/system_prompt.txt
+summarize_prompt: prompts/summarize_prompt.txt
+
+role_knowledge: true
+turn_budget: 24
+
+temperature: null
+seed: 0
+
+summarizer:
+  model: deepseek-v4-flash
+  provider: deepseek
+  temperature: 0.0
+
+output_dir: runs

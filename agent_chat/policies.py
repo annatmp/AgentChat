@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
+from typing import Callable
 
 from .agents import Agent
 from .conversation import (
@@ -46,6 +47,21 @@ def stop_when_any(*conditions: StopCondition) -> StopCondition:
     def check(history: list[Message]) -> bool:
         return any(condition(history) for condition in conditions)
     return check
+
+
+# --- Turn context ---
+
+def review_round_context(template: str, first_template: str) -> Callable[[int], str]:
+    """
+    Solo baseline's `turn_context` for `Conversation.run()`: "REVIEW ROUND N"
+    framing, with its own wording for round 1 — there's no prior round to
+    "continue refining," so that template is used only from round 2 on.
+    """
+    def context(turn_count: int) -> str:
+        if turn_count == 0:
+            return first_template.format(n=1)
+        return template.format(n=turn_count + 1)
+    return context
 
 
 # --- Consensus early-stop ---

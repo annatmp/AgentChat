@@ -1,0 +1,41 @@
+# Cheap smoke test for the solo baseline mechanism (all_role_knowledge +
+# review_rounds) — not an experimental cell, just for checking the plumbing
+# actually works against a live API before spending real money on it.
+#
+# Reuses agents/solo.yaml (canonically claude-sonnet-5/anthropic) but swaps the
+# model via `panel` rather than forking the agent file, onto DeepSeek's cheap
+# flash tier ($0.30/$1.20 per MTok — see pricing.py).
+
+name: solo_deepseek_smoketest
+
+roster:
+  - solo
+
+panel:
+  solo:
+    model: deepseek-v4-flash
+    provider: deepseek
+
+strategy:
+  name: round_robin      # trivial for a one-agent roster; no real selection to make
+  params: {}
+
+all_role_knowledge: true   # union of every role's knowledge/*.md, not just solo's own (it has none)
+review_rounds: true
+
+task_prompt: prompts/prompt_complex.txt
+system_prompt: prompts/system_prompt.txt
+summarize_prompt: prompts/summarize_prompt.txt
+
+role_knowledge: true
+turn_budget: 3            # small on purpose — this is a smoke test, not a real run
+
+temperature: null
+seed: 0
+
+summarizer:
+  model: deepseek-v4-flash
+  provider: deepseek
+  temperature: 0.0
+
+output_dir: runs

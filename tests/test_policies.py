@@ -7,6 +7,7 @@ from agent_chat.policies import (
     ConsensusVote,
     consensus_stop,
     parse_consensus_vote,
+    review_round_context,
     stop_when_any,
 )
 from agent_chat.records import CallRecord, SelectorLog
@@ -122,3 +123,22 @@ def test_stops_when_any_condition_is_true():
     never_stop = lambda history: False
     assert stop_when_any(never_stop, always_stop)([]) is True
     assert stop_when_any(never_stop, never_stop)([]) is False
+
+
+# --- review_round_context ---
+
+def test_round_one_uses_the_first_template_not_the_continuation_one():
+    context = review_round_context(
+        template="REVIEW ROUND {n}: continue refining the plan from where you left off.",
+        first_template="REVIEW ROUND 1: come up with an initial plan — there is nothing to refine yet.",
+    )
+    assert context(0) == "REVIEW ROUND 1: come up with an initial plan — there is nothing to refine yet."
+
+
+def test_later_rounds_use_the_continuation_template():
+    context = review_round_context(
+        template="REVIEW ROUND {n}: continue refining the plan from where you left off.",
+        first_template="REVIEW ROUND 1: come up with an initial plan — there is nothing to refine yet.",
+    )
+    assert context(1) == "REVIEW ROUND 2: continue refining the plan from where you left off."
+    assert context(2) == "REVIEW ROUND 3: continue refining the plan from where you left off."
