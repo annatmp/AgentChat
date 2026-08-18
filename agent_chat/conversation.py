@@ -184,14 +184,24 @@ def usage_from_openai(usage_obj) -> Usage:
 
     `available=False` when the endpoint sent no usage object at all, so a run
     record never shows measured-looking zeros.
+
+    Unlike Anthropic, `prompt_tokens` here already *includes* the cached
+    subset (`prompt_tokens_details.cached_tokens`) rather than excluding it —
+    so it's subtracted out here to give `input_tokens` the same "full-price,
+    cache excluded" meaning Anthropic's field has. `cost_usd` bills the cache
+    buckets additively (Anthropic's pricing model) for every provider; without
+    this subtraction every cached token would be billed once at full price
+    (still inside prompt_tokens) and again at the cache-read multiplier.
     """
     if usage_obj is None:
         return Usage(available=False)
     details = getattr(usage_obj, "prompt_tokens_details", None)
+    cached = (getattr(details, "cached_tokens", 0) or 0) if details else 0
+    prompt_tokens = getattr(usage_obj, "prompt_tokens", 0) or 0
     return Usage(
-        input_tokens=getattr(usage_obj, "prompt_tokens", 0) or 0,
+        input_tokens=prompt_tokens - cached,
         output_tokens=getattr(usage_obj, "completion_tokens", 0) or 0,
-        cache_read_input_tokens=(getattr(details, "cached_tokens", 0) or 0) if details else 0,
+        cache_read_input_tokens=cached,
     )
 
 
@@ -233,6 +243,13 @@ def _call_openai_compatible(
 ) -> str:
     client = _OPENAI_COMPATIBLE_CLIENTS[agent.provider]()
     payload = [{"role": "system", "content": system}] + messages
+    if agent.provider == "google" and payload[-1]["role"] == "assistant":
+        # Gemini's own API (which this OpenAI-compatibility layer sits on top
+        # of) 400s on "Requests ending with a model turn are not supported" —
+        # e.g. the same agent speaking twice in a row with no one else's turn
+        # in between. Every other provider tolerates this. The nudge is
+        # call-local only, like extra_context; it never touches self.history.
+        payload = payload + [{"role": "user", "content": "Continue."}]
 
     def attempt(with_optional: bool):
         kwargs: dict = {"model": agent.model, "messages": payload, "stream": True}
@@ -242,8 +259,12 @@ def _call_openai_compatible(
             # Usage is only streamed back when asked for, and arrives in a final
             # chunk whose `choices` list is empty.
             kwargs["stream_options"] = {"include_usage": True}
-            if seed is not None:
-                kwargs["seed"] = seed  # best-effort on OpenAI-compatible endpoints
+            # Best-effort on OpenAI-compatible endpoints in general, but
+            # Gemini's rejects it outright ("Unknown name \"seed\": Cannot
+            # find field") on every call, so skip sending it there rather
+            # than paying for a guaranteed-failing first attempt each time.
+            if seed is not None and agent.provider != "google":
+                kwargs["seed"] = seed
         chunks: list[str] = []
         usage_obj = None
         for chunk in client.chat.completions.create(**kwargs):  # type: ignore[arg-type]
@@ -396,12 +417,19 @@ class Conversation:
         agent_name: str,
         on_token: Callable[[str], None] | None = None,
         selector: dict | None = None,
+        extra_context: str | None = None,
     ) -> Message:
         """Let one agent respond to the current history."""
         agent = self.agents[agent_name]
+        # Ephemeral, call-local only — never appended to self.history, same
+        # non-mutating pattern the strategies' own private calls already use.
+        history_for_call = (
+            self.history + [Message(speaker="user", content=extra_context)]
+            if extra_context else self.history
+        )
         try:
             result = call_agent_recorded(
-                agent, self.history, system_for(agent, self.system_prompt, self.knowledge.get(agent.name, "")),
+                agent, history_for_call, system_for(agent, self.system_prompt, self.knowledge.get(agent.name, "")),
                 kind=KIND_TURN, on_token=on_token,
                 temperature=self.temperature, seed=self.seed,
                 on_retry=self._note_retry,
@@ -432,8 +460,16 @@ class Conversation:
         stream: bool = False,
         post_processors: list[PostProcessor] | None = None,
         selector_log: SelectorLog | None = None,
+        turn_context: Callable[[int], str] | None = None,
     ) -> list[Message]:
-        """Run until stop_condition is met, using turn_selector to pick each speaker."""
+        """
+        Run until stop_condition is met, using turn_selector to pick each speaker.
+
+        `turn_context`, if given, is called with the current turn count before
+        each turn and its result passed as that turn's `extra_context` — e.g.
+        the solo baseline's "REVIEW ROUND N" framing. Unused by every other
+        condition.
+        """
         produced = []
         try:
             while not stop_condition(self.history):
@@ -442,16 +478,18 @@ class Conversation:
                 if selector_log:
                     self.selector_calls.extend(selector_log.take_calls())
                 self._check_speaker(name)
+                context = turn_context(len(self.turns)) if turn_context else None
                 if stream:
                     print(f"\n[{name.upper()}]\n", flush=True)
                     msg = self.step(
                         name,
                         on_token=lambda t: print(t, end="", flush=True),
                         selector=rationale,
+                        extra_context=context,
                     )
                     print()
                 else:
-                    msg = self.step(name, selector=rationale)
+                    msg = self.step(name, selector=rationale, extra_context=context)
                 produced.append(msg)
         finally:
             if selector_log:

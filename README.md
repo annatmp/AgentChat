@@ -90,6 +90,17 @@ uv run pytest
 
 `--check-models` calls `models.list()` once per provider in use and checks every configured agent/summarizer model against it — a typo'd or invalid model ID (e.g. a date-suffixed current Anthropic model, which 404s) is caught before any generation call. It costs no conversation tokens. Not every Azure AI Foundry deployment exposes `models.list()`; when it doesn't, that provider's models are reported `unverified` rather than failed.
 
+### Tracing (optional)
+
+To inspect exactly what every call — turns, bids, consensus votes, the summarizer — actually received as input, trace a run to a local [Phoenix](https://arize.com/docs/phoenix) instance:
+
+```bash
+uv sync --group tracing        # arize-phoenix + openinference instrumentors; not installed by default
+uvx arize-phoenix serve        # local UI at http://localhost:6006
+```
+
+Then set `PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006` in `.env` and run as usual. Purely observational — it never affects `run_id` or a run's output, and does nothing at all if the env var is unset. See the comment above the tracing block in `main.py` for two library quirks worth knowing if this stops working after an `arize-phoenix` upgrade: `endpoint` needs the `/v1/traces` path (the bare host 405s), and instrumentation is done explicitly per-provider rather than via `auto_instrument=True`, which didn't activate anything when this was last verified.
+
 ## Run configs
 
 Everything that could change a conversation's outcome lives here, so it can be recorded and varied. See [configs/baseline.yaml](configs/baseline.yaml).
@@ -162,6 +173,8 @@ Registered by name so a run config can select one. A strategy is just `(history,
 | ------------- | ------- | ------------------------------------------------------ |
 | `round_robin` | `order` | Cycles through agents; defaults to the roster order    |
 | `bidding`     | `bid_prompt`, `bid_max_tokens`, `starting_agent` | Every agent runs a private think step scoring 0-4 how urgent it is for them to speak; highest bid wins, ties broken by the run's seeded RNG. Bid calls are recorded as selector overhead, not conversation spend. `starting_agent` skips the auction on the first turn. |
+| `obligation_first` | `obligation_prompt`, `obligation_max_tokens`, plus every `bidding` param (used for its fallback) | The last speaker privately reports whether they addressed one specific agent; that agent gets the floor. Falls back to the `bidding` auction when nobody was addressed, the response is unparseable, or more than one agent was named. |
+| `facilitator` | `chair` (default `scrum_master`), `facilitator_prompt`, `facilitator_max_tokens`, `facilitator_max_attempts` | The chair privately decides who speaks next each turn, including themselves. On an unparseable pick, retries with corrective feedback up to `facilitator_max_attempts`; if every attempt fails, the run aborts rather than guessing. |
 
 ### Stop conditions (`agent_chat/policies.py`)
 

@@ -29,14 +29,32 @@ def test_anthropic_usage_tolerates_missing_cache_fields():
     assert usage.cache_creation_input_tokens == 0
 
 
-def test_openai_usage_maps_prompt_and_completion_tokens():
+def test_openai_usage_subtracts_cached_tokens_from_input_tokens():
+    # Unlike Anthropic, OpenAI-compatible prompt_tokens *includes* the cached
+    # subset rather than excluding it. input_tokens must end up cache-excluded
+    # either way, or cost_usd's additive cache formula double-bills the
+    # cached portion (once inside input_tokens, again via the multiplier).
     usage = usage_from_openai(SimpleNamespace(
         prompt_tokens=900, completion_tokens=120,
         prompt_tokens_details=SimpleNamespace(cached_tokens=64),
     ))
-    assert (usage.input_tokens, usage.output_tokens) == (900, 120)
+    assert (usage.input_tokens, usage.output_tokens) == (836, 120)
     assert usage.cache_read_input_tokens == 64
     assert usage.available is True
+
+
+def test_openai_usage_cost_matches_anthropic_formula_for_equivalent_cache_split():
+    # With input_tokens normalized to exclude the cached subset, cost_usd
+    # should treat an OpenAI-compatible call and an equivalent Anthropic call
+    # (same non-cached/cached/output split) identically.
+    openai_usage = usage_from_openai(SimpleNamespace(
+        prompt_tokens=1000, completion_tokens=50,
+        prompt_tokens_details=SimpleNamespace(cached_tokens=900),
+    ))
+    anthropic_usage = usage_from_anthropic(SimpleNamespace(
+        input_tokens=100, output_tokens=50, cache_read_input_tokens=900, cache_creation_input_tokens=0,
+    ))
+    assert cost_usd("claude-sonnet-4-6", openai_usage) == cost_usd("claude-sonnet-4-6", anthropic_usage)
 
 
 def test_missing_openai_usage_is_marked_unavailable_not_zero():

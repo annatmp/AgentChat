@@ -125,7 +125,7 @@ with a genuinely different wire format (like `anthropic`) needs its own
 model string. `call_agent` is a thin wrapper returning just the text, kept
 stable because the judge notebook calls it — don't change its signature.
 
-Two provider quirks worth knowing:
+Provider quirks worth knowing:
 
 - **OpenAI-compatible endpoints only report usage if asked.** `stream_options={"include_usage": True}`
   is required, and the usage then arrives in a final chunk whose `choices` list is
@@ -134,6 +134,27 @@ Two provider quirks worth knowing:
   fallback that marks `usage.available = False` rather than reporting zeros.
 - **Anthropic has no `seed`.** It's recorded as a replicate label and used to
   seed the run's `random.Random`, but not sent.
+- **Gemini has no `seed` either**, despite living behind the same
+  OpenAI-compatible `chat.completions` surface as the others — it 400s with
+  `Unknown name "seed": Cannot find field` on every call. `_call_openai_compatible`
+  skips sending it for `provider == "google"` specifically, rather than paying
+  for a guaranteed-failing first attempt (and a red span in tracing) each turn.
+- **Gemini rejects a request whose message list ends on a model turn** — e.g.
+  the same agent speaking twice in a row with no one else's turn in between,
+  which any non-round-robin strategy can produce. Every other provider
+  tolerates it (OpenAI's own API treats it as a completion prefill). For
+  `provider == "google"`, `_call_openai_compatible` appends a call-local
+  `{"role": "user", "content": "Continue."}` turn when needed — never written
+  to `self.history`, same as `extra_context`.
+- **OpenAI-compatible `prompt_tokens` includes cached tokens; Anthropic's
+  `input_tokens` excludes them.** `cost_usd` bills the cache buckets
+  additively (Anthropic's model): `input_tokens + cache_read*0.1 +
+  cache_creation*1.25`. `usage_from_openai` subtracts `cached_tokens` out of
+  `prompt_tokens` before it reaches `Usage.input_tokens` so that formula stays
+  correct for every provider — skip that subtraction and every cached token
+  gets billed at ~1.1x instead of 0.1x, which was silently inflating recorded
+  cost for any provider with a nontrivial cache hit rate (verified up to
+  ~3x on individual calls, ~1.76x for a whole run, against real run records).
 
 Clients are constructed with `max_retries=0` on purpose: retrying happens in
 `retry.py`, where the attempt count can reach the run record. A streaming retry
