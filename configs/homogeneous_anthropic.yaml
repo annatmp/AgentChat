@@ -14,12 +14,12 @@ roster:
   - architect
 
 panel:
-  product_owner: {model: claude-sonnet-5, provider: anthropic}
-  backend_dev: {model: claude-sonnet-5, provider: anthropic}
-  frontend_dev: {model: claude-sonnet-5, provider: anthropic}
-  qa_engineer: {model: claude-sonnet-5, provider: anthropic}
-  scrum_master: {model: claude-sonnet-5, provider: anthropic}
-  architect: {model: claude-sonnet-5, provider: anthropic}
+  product_owner: {model: claude-haiku-4-5-20251001, provider: anthropic}
+  backend_dev: {model: claude-haiku-4-5-20251001, provider: anthropic}
+  frontend_dev: {model: claude-haiku-4-5-20251001, provider: anthropic}
+  qa_engineer: {model: claude-haiku-4-5-20251001, provider: anthropic}
+  scrum_master: {model: claude-haiku-4-5-20251001, provider: anthropic}
+  architect: {model: claude-haiku-4-5-20251001, provider: anthropic}
 
 strategy:
   name: bidding
@@ -32,7 +32,7 @@ system_prompt: prompts/system_prompt.txt
 summarize_prompt: prompts/summarize_prompt.txt
 
 role_knowledge: true
-turn_budget: 24
+turn_budget: 20
 
 temperature: null
 seed: 0

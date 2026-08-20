@@ -1,0 +1,54 @@
+# Cheap mixed/heterogeneous team for dev/harness iteration — not an
+# experimental cell. Same pairing structure as mixed_1/2/3.yaml (PO+Backend /
+# Frontend+QA / SM+Architect), but on cheap models instead of the real
+# per-family panel models:
+#   - Anthropic: claude-haiku-4-5-20251001 ($1.00/$5.00 — pricing.py)
+#   - Google:    gemini-3.6-flash ($1.50/$7.50 — already this repo's cheap
+#                Google tier, there's no cheaper one configured anywhere else)
+#   - The only azure_ai model this repo knows (gpt-5.6-terra) is not cheap
+#     ($5.00/$22.50), so the third pair uses Mistral instead — the one other
+#     grounded model id in docs/experiment_setup.md (mistral-medium-2505, the
+#     independent judge model). No PRICING entry for it yet (see pricing.py),
+#     so this config's totals will show cost_complete: false. Swap in a real
+#     cheap azure_ai/azure_openai deployment name here if you'd rather.
+
+name: mixed_cheap
+
+roster:
+  - product_owner
+  - backend_dev
+  - frontend_dev
+  - qa_engineer
+  - scrum_master
+  - architect
+
+panel:
+  product_owner: {model: claude-haiku-4-5-20251001, provider: anthropic}
+  backend_dev: {model: claude-haiku-4-5-20251001, provider: anthropic}
+  frontend_dev: {model: gemini-3.6-flash, provider: google}
+  qa_engineer: {model: gemini-3.6-flash, provider: google}
+  scrum_master: {model: mistral-medium-2505, provider: mistral}
+  architect: {model: mistral-medium-2505, provider: mistral}
+
+strategy:
+  name: bidding
+  params:
+    bid_prompt: prompts/bid_prompt.txt
+    starting_agent: product_owner
+
+task_prompt: prompts/prompt_complex.txt
+system_prompt: prompts/system_prompt.txt
+summarize_prompt: prompts/summarize_prompt.txt
+
+role_knowledge: true
+turn_budget: 10
+
+temperature: null
+seed: 0
+
+summarizer:
+  model: deepseek-v4-flash
+  provider: deepseek
+  temperature: 0.0
+
+output_dir: runs

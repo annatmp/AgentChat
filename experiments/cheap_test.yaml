@@ -1,0 +1,15 @@
+# Cheap end-to-end test of every strategy against the cheap panels
+# (configs/solo_cheap.yaml, homogeneous_cheap.yaml, mixed_cheap.yaml) — one
+# seed, no replicates. Not an experimental cell, just for exercising the
+# harness + every strategy cheaply before a real (expensive) run.
+name: cheap_test
+seeds: [0]
+strategies: [round_robin, bidding, obligation_first, facilitator]
+tiers:
+  solo:
+    configs: [configs/solo_cheap.yaml]
+    strategies: []   # one-agent teams don't need turn-taking strategies
+  homogeneous:
+    configs: [configs/homogeneous_cheap.yaml]
+  mixed:
+    configs: [configs/mixed_cheap.yaml]

@@ -8,6 +8,7 @@ from agent_chat.records import (
     canonical_json,
     compute_run_id,
     compute_totals,
+    is_successful_run,
 )
 
 
@@ -69,6 +70,30 @@ def test_unpriced_models_do_not_report_a_complete_cost():
 
     assert totals["conversation"]["cost_complete"] is False
     assert totals["conversation"]["cost_usd"] == 0.5   # the known half, not a fake zero
+
+
+def test_is_successful_run_true_for_a_clean_record(tmp_path):
+    path = tmp_path / "clean.json"
+    path.write_text(json.dumps({"errors": []}))
+    assert is_successful_run(path) is True
+
+
+def test_is_successful_run_false_when_errors_are_present(tmp_path):
+    # A crashed attempt must not be mistaken for "already done" on resume, or
+    # a harness re-run would skip it forever instead of retrying.
+    path = tmp_path / "crashed.json"
+    path.write_text(json.dumps({"errors": ["aborted after 3 turns: BadRequestError: ..."]}))
+    assert is_successful_run(path) is False
+
+
+def test_is_successful_run_false_for_a_missing_file(tmp_path):
+    assert is_successful_run(tmp_path / "does_not_exist.json") is False
+
+
+def test_is_successful_run_false_for_corrupt_json(tmp_path):
+    path = tmp_path / "corrupt.json"
+    path.write_text("{not valid json")
+    assert is_successful_run(path) is False
 
 
 def test_selector_log_note_merges_across_calls_within_one_turn():

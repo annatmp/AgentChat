@@ -14,13 +14,14 @@ with no YAML, an unknown provider, or a temperature on a model that rejects one.
 from __future__ import annotations
 
 import random
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 import yaml
 
 from agent_chat.agents import PROVIDERS, TEMPERATURE_REJECTED, Agent, load_agent, load_roster
 from agent_chat.records import SCHEMA_VERSION, compute_run_id, file_sha256
+from agent_chat.strategies import REGISTRY as STRATEGY_REGISTRY
 
 
 class ConfigError(ValueError):
@@ -150,12 +151,48 @@ def load_run_config(path: str | Path) -> RunConfig:
     return config
 
 
+def apply_overrides(
+    config: RunConfig, *, strategy: str | None = None, seed: int | None = None,
+    experiment_id: str | None = None,
+) -> RunConfig:
+    """
+    Return a new config with a grid cell's overrides applied, params otherwise kept.
+
+    The one place that knows how a grid cell overrides a base panel config —
+    `main.py`'s `--strategy`/`--seed`/`--experiment-id` flags and the harness's
+    own pre-resolution pass both call this, so they can't drift apart.
+
+    `strategy`/`seed` feed `_run_id_payload`, so overriding them is automatically
+    reflected in `run_id` and the written record's `config` with no extra
+    plumbing. `experiment_id` only reshapes `output_dir` (already excluded from
+    `run_id` on purpose — see `_run_id_payload`), so it never perturbs identity.
+    """
+    if strategy is None and seed is None and experiment_id is None:
+        return config
+    updates: dict = {}
+    if strategy is not None:
+        updates["strategy"] = replace(config.strategy, name=strategy)
+    if seed is not None:
+        updates["seed"] = seed
+    if experiment_id is not None:
+        updates["output_dir"] = str(Path(config.output_dir) / experiment_id)
+    return replace(config, **updates)
+
+
 # --- Validation ---
 
 def _check_provider(label: str, provider: str) -> None:
     if provider not in PROVIDERS:
         raise ConfigError(
             f"{label}: unknown provider {provider!r}. Known: {', '.join(PROVIDERS)}"
+        )
+
+
+def _check_strategy(name: str) -> None:
+    if name not in STRATEGY_REGISTRY:
+        raise ConfigError(
+            f"strategy: unknown strategy {name!r}. "
+            f"Available: {', '.join(sorted(STRATEGY_REGISTRY))}"
         )
 
 
@@ -251,6 +288,7 @@ def resolve(config: RunConfig) -> ResolvedRun:
     duplicates = {n for n in config.roster if config.roster.count(n) > 1}
     if duplicates:
         raise ConfigError(f"roster lists duplicates: {', '.join(sorted(duplicates))}")
+    _check_strategy(config.strategy.name)
 
     agents = load_roster(config.agents_dir, config.roster)
     _apply_panel(agents, config.panel)

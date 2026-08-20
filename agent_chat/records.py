@@ -210,6 +210,22 @@ def compute_run_id(payload: dict, length: int = 12) -> str:
     return hashlib.sha256(canonical_json(payload).encode()).hexdigest()[:length]
 
 
+def is_successful_run(path: str | Path) -> bool:
+    """
+    Was the run record at `path` a clean completion?
+
+    False for a missing or corrupt file, or one with a non-empty `errors`
+    list — the "skip, this is already done" check must not treat a crashed
+    attempt as done, or a resumed grid would silently never retry it.
+    """
+    path = Path(path)
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    return not data.get("errors")
+
+
 def git_sha() -> str | None:
     try:
         out = subprocess.run(
