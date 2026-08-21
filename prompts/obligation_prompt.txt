@@ -1,0 +1,9 @@
+This is a private check-in about the message you just sent, not a new message to the group. Nobody else will see your answer — it is only used to decide who speaks next.
+
+Think back on what you just said. Did you address one specific person by name with a question or request that needs their response before the discussion can move forward? Or was your message open to the whole group, a general statement, or something nobody in particular needs to answer right now?
+
+If more than one person could reasonably respond, name only the ONE person whose response is most needed next — not several.
+
+Respond with exactly two lines, nothing else:
+ADDRESSED: <the one agent's name you addressed, or NONE>
+REASON: <one short sentence>

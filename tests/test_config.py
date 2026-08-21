@@ -5,7 +5,7 @@ not discovered as a 400 partway through a 140-run grid.
 
 import pytest
 
-from agent_chat.config import ConfigError, load, load_run_config, resolve
+from agent_chat.config import ConfigError, apply_overrides, load, load_run_config, resolve
 
 BASELINE = "configs/baseline.yaml"
 
@@ -152,6 +152,36 @@ def test_panel_cannot_name_an_agent_outside_the_roster():
 def test_unknown_config_keys_are_rejected():
     with pytest.raises(ConfigError, match="unknown keys"):
         load_run_config("tests/fixtures/unknown_key.yaml")
+
+
+def test_apply_overrides_with_nothing_set_is_a_no_op():
+    config = load_run_config(BASELINE)
+    assert apply_overrides(config) is config
+
+
+def test_apply_overrides_strategy_and_seed_change_the_run_id():
+    base = load_run_config(BASELINE)  # baseline.yaml's own strategy is "bidding"
+    overridden = apply_overrides(base, strategy="round_robin", seed=99)
+    assert overridden.strategy.name == "round_robin"
+    assert overridden.seed == 99
+    assert base.strategy.name == "bidding"  # original config untouched
+    assert resolve(overridden).run_id != resolve(load_run_config(BASELINE)).run_id
+
+
+def test_apply_overrides_experiment_id_scopes_output_dir_without_changing_run_id():
+    base = load_run_config(BASELINE)
+    overridden = apply_overrides(base, experiment_id="pilot_r2")
+    assert overridden.output_dir == "runs/pilot_r2"
+    assert resolve(overridden).run_id == resolve(load_run_config(BASELINE)).run_id
+
+
+def test_unknown_strategy_name_is_rejected_at_load_not_just_at_build():
+    # main.py/run_experiment.py both must catch a typo'd --strategy before any
+    # API call, not discover it only when strategies.build() runs mid-conversation.
+    config = load_run_config(BASELINE)
+    config.strategy.name = "urgency_auction"
+    with pytest.raises(ConfigError, match="unknown strategy"):
+        resolve(config)
 
 
 def test_unknown_strategy_is_rejected_when_built():

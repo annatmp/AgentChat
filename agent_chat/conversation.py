@@ -161,9 +161,22 @@ _OPTIONAL_KWARG_HINTS = (
     "unsupported", "unknown", "unrecognized", "extra inputs",
 )
 
+# Providers whose OpenAI-compatible endpoint rejects `seed` on every call
+# (verified live, not just "some deployments don't support it" like Azure AI
+# Foundry's stream_options quirk) — skipped proactively so every call to
+# these doesn't pay for a guaranteed-failing first attempt.
+_NO_SEED_PROVIDERS = frozenset({"google", "mistral"})
+
 
 def _rejects_optional_kwargs(exc: BaseException) -> bool:
-    return isinstance(exc, openai.BadRequestError) and any(
+    # openai.APIStatusError, not just BadRequestError: Mistral rejects an
+    # unrecognized field (like seed) with a 422 UnprocessableEntityError, a
+    # sibling class of BadRequestError (400) under APIStatusError, not a
+    # subclass of it. Narrowing to BadRequestError alone meant Mistral's
+    # rejection was never caught here — it aborted the whole conversation
+    # instead of retrying without the optional kwargs, unlike every other
+    # OpenAI-compatible provider's 400-shaped version of the same rejection.
+    return isinstance(exc, openai.APIStatusError) and any(
         hint in str(exc).lower() for hint in _OPTIONAL_KWARG_HINTS
     )
 
@@ -259,11 +272,11 @@ def _call_openai_compatible(
             # Usage is only streamed back when asked for, and arrives in a final
             # chunk whose `choices` list is empty.
             kwargs["stream_options"] = {"include_usage": True}
-            # Best-effort on OpenAI-compatible endpoints in general, but
-            # Gemini's rejects it outright ("Unknown name \"seed\": Cannot
-            # find field") on every call, so skip sending it there rather
-            # than paying for a guaranteed-failing first attempt each time.
-            if seed is not None and agent.provider != "google":
+            # Best-effort on OpenAI-compatible endpoints in general, but a
+            # few reject it outright on every call (see _NO_SEED_PROVIDERS),
+            # so it's skipped there rather than paying for a guaranteed-
+            # failing first attempt each time.
+            if seed is not None and agent.provider not in _NO_SEED_PROVIDERS:
                 kwargs["seed"] = seed
         chunks: list[str] = []
         usage_obj = None
@@ -290,10 +303,14 @@ def _call_openai_compatible(
 
     try:
         (text, usage_obj), retries = run(True)
-    except openai.BadRequestError as exc:
+    except openai.APIStatusError as exc:
         # Not every Azure AI Foundry serverless deployment accepts stream_options
-        # or seed. Fall back once without them and mark usage unavailable, rather
-        # than reporting zeros as if they had been measured.
+        # or seed, and Mistral rejects seed with a 422 (UnprocessableEntityError)
+        # rather than a 400 (BadRequestError) — a sibling exception under
+        # APIStatusError, not a subclass of BadRequestError, so this must catch
+        # the shared base or Mistral's rejection aborts the call outright instead
+        # of falling back. Fall back once without the optional kwargs and mark
+        # usage unavailable, rather than reporting zeros as if they had been measured.
         if emitted or not _rejects_optional_kwargs(exc):
             raise
         (text, usage_obj), retries = run(False)

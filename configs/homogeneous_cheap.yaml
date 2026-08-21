@@ -1,0 +1,44 @@
+# Cheap homogeneous team for dev/harness iteration — not an experimental
+# cell. All six roles on DeepSeek's cheap flash tier ($0.30/$1.20 per MTok —
+# see pricing.py), same panel structure as homogeneous_anthropic/_google/_azure_gpt.
+
+name: homogeneous_cheap
+
+roster:
+  - product_owner
+  - backend_dev
+  - frontend_dev
+  - qa_engineer
+  - scrum_master
+  - architect
+
+panel:
+  product_owner: {model: deepseek-v4-flash, provider: deepseek}
+  backend_dev: {model: deepseek-v4-flash, provider: deepseek}
+  frontend_dev: {model: deepseek-v4-flash, provider: deepseek}
+  qa_engineer: {model: deepseek-v4-flash, provider: deepseek}
+  scrum_master: {model: deepseek-v4-flash, provider: deepseek}
+  architect: {model: deepseek-v4-flash, provider: deepseek}
+
+strategy:
+  name: bidding
+  params:
+    bid_prompt: prompts/bid_prompt.txt
+    starting_agent: scrum_master
+
+task_prompt: prompts/prompt_complex.txt
+system_prompt: prompts/system_prompt.txt
+summarize_prompt: prompts/summarize_prompt.txt
+
+role_knowledge: true
+turn_budget: 10
+
+temperature: null
+seed: 0
+
+summarizer:
+  model: deepseek-v4-flash
+  provider: deepseek
+  temperature: 0.0
+
+output_dir: runs

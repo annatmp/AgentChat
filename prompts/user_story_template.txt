@@ -1,0 +1,16 @@
+Every user story must use exactly this format:
+
+## Story <N>: <Title>
+
+**Description:** <1-3 sentences>
+
+**Effort:** S | M | L
+
+**Acceptance Criteria:**
+- <criterion>
+- <criterion>
+
+**Dependencies:** <comma-separated story numbers this depends on, or "None">
+
+Number stories sequentially starting from 1. Effort is exactly one of S, M, or L — no other
+scale. Dependencies always has a value; write "None" rather than omitting the field.

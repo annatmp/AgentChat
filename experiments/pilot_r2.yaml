@@ -1,0 +1,13 @@
+# Small pilot for verifying the harness itself (resume, Phoenix project
+# scoping, summary rollup) — not the real 135-run grid. 1 solo config x 2
+# seeds (no strategy crossing) + 1 homogeneous config x 4 strategies x 2
+# seeds = 10 cells.
+name: pilot_sm
+seeds: [0]
+strategies: [round_robin, bidding, obligation_first, facilitator]
+tiers:
+  solo:
+    configs: [configs/solo_anthropic.yaml]
+    strategies: []   # one-agent teams don't need turn-taking strategies
+  homogeneous:
+    configs: [configs/homogeneous_anthropic.yaml]

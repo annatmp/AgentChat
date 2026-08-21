@@ -21,43 +21,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Optional: trace every LLM call (full prompt, response, latency, tokens) to a
-# local Phoenix instance for inspection — `uvx arize-phoenix serve`, then set
-# PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006 in .env. Purely observational:
-# never affects run_id or a run's output. Silent no-op unless both the env var is
-# set and `uv sync --group tracing` has been run.
-#
-# Two things are done explicitly here rather than relying on the library's own
-# "convenient" defaults, both verified live against arize-phoenix 15.1.0 after
-# each silently exported nothing instead of raising:
-#   - `endpoint` must include the /v1/traces path. register()'s own env-var
-#     pickup (i.e. leaving `endpoint` unset) resolves to an unrelated OTel SDK
-#     default (localhost:4317/gRPC) instead of this value; passing the bare host
-#     without the path 405s on every export.
-#   - `auto_instrument=True` did not activate the openai/anthropic instrumentors
-#     in this environment — instrumenting both classes explicitly is what
-#     actually put spans in Phoenix when this was tested against a live run.
-_phoenix_endpoint = os.environ.get("PHOENIX_COLLECTOR_ENDPOINT")
-if _phoenix_endpoint:
-    try:
-        from openinference.instrumentation.anthropic import AnthropicInstrumentor
-        from openinference.instrumentation.openai import OpenAIInstrumentor
-        from phoenix.otel import register
-
-        if not _phoenix_endpoint.rstrip("/").endswith("/v1/traces"):
-            _phoenix_endpoint = _phoenix_endpoint.rstrip("/") + "/v1/traces"
-        _tracer_provider = register(project_name="agent-chat", endpoint=_phoenix_endpoint)
-        AnthropicInstrumentor().instrument(tracer_provider=_tracer_provider)
-        OpenAIInstrumentor().instrument(tracer_provider=_tracer_provider)
-    except ImportError:
-        print(
-            "PHOENIX_COLLECTOR_ENDPOINT is set but tracing packages aren't installed — "
-            "run `uv sync --group tracing` to enable tracing, or unset it to skip.",
-            file=sys.stderr,
-        )
-
 from agent_chat import strategies
-from agent_chat.config import ConfigError, ResolvedRun, load
+from agent_chat.config import ConfigError, ResolvedRun, apply_overrides, load_run_config, resolve
 from agent_chat.conversation import Conversation
 from agent_chat.model_check import check_models
 from agent_chat.policies import (
@@ -69,9 +34,55 @@ from agent_chat.policies import (
     stop_when_any,
     summarize,
 )
-from agent_chat.records import RunRecord, SelectorLog, compute_totals, git_sha
+from agent_chat.records import RunRecord, SelectorLog, compute_totals, git_sha, is_successful_run
 
 DEFAULT_CONFIG = "configs/baseline.yaml"
+
+
+def _setup_tracing(experiment_id: str | None) -> None:
+    """
+    Optional: trace every LLM call (full prompt, response, latency, tokens) to a
+    local Phoenix instance for inspection — `uvx arize-phoenix serve`, then set
+    PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006 in .env. Purely observational:
+    never affects run_id or a run's output. Silent no-op unless both the env var is
+    set and `uv sync --group tracing` has been run.
+
+    `experiment_id`, if given (from `--experiment-id`), scopes the Phoenix
+    project to `agent-chat-<experiment_id>` instead of the plain `agent-chat`
+    project every ad-hoc run shares — so a harness-driven batch of runs is
+    browsable as one group in the Phoenix UI, distinct from other batches.
+
+    Two things are done explicitly here rather than relying on the library's own
+    "convenient" defaults, both verified live against arize-phoenix 15.1.0 after
+    each silently exported nothing instead of raising:
+      - `endpoint` must include the /v1/traces path. register()'s own env-var
+        pickup (i.e. leaving `endpoint` unset) resolves to an unrelated OTel SDK
+        default (localhost:4317/gRPC) instead of this value; passing the bare host
+        without the path 405s on every export.
+      - `auto_instrument=True` did not activate the openai/anthropic instrumentors
+        in this environment — instrumenting both classes explicitly is what
+        actually put spans in Phoenix when this was tested against a live run.
+    """
+    endpoint = os.environ.get("PHOENIX_COLLECTOR_ENDPOINT")
+    if not endpoint:
+        return
+    try:
+        from openinference.instrumentation.anthropic import AnthropicInstrumentor
+        from openinference.instrumentation.openai import OpenAIInstrumentor
+        from phoenix.otel import register
+
+        if not endpoint.rstrip("/").endswith("/v1/traces"):
+            endpoint = endpoint.rstrip("/") + "/v1/traces"
+        project_name = f"agent-chat-{experiment_id}" if experiment_id else "agent-chat"
+        tracer_provider = register(project_name=project_name, endpoint=endpoint)
+        AnthropicInstrumentor().instrument(tracer_provider=tracer_provider)
+        OpenAIInstrumentor().instrument(tracer_provider=tracer_provider)
+    except ImportError:
+        print(
+            "PHOENIX_COLLECTOR_ENDPOINT is set but tracing packages aren't installed — "
+            "run `uv sync --group tracing` to enable tracing, or unset it to skip.",
+            file=sys.stderr,
+        )
 
 
 class _Tee:
@@ -102,6 +113,14 @@ def _parse_args(argv=None):
                              "tokens spent")
     parser.add_argument("--force", action="store_true",
                         help="run even if a record for this run_id already exists")
+    parser.add_argument("--strategy", default=None,
+                        help="override the config's strategy.name (e.g. for a grid cell)")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="override the config's seed (e.g. for a grid replicate)")
+    parser.add_argument("--experiment-id", default=None,
+                        help="scope output_dir to runs/<id>, logs to logs/<id>, and the "
+                             "Phoenix project to agent-chat-<id> — set by run_experiment.py, "
+                             "rarely needed by hand")
     return parser.parse_args(argv)
 
 
@@ -128,10 +147,15 @@ def _print_config(run: ResolvedRun) -> None:
 
 def _print_dry_run(run: ResolvedRun) -> None:
     output = run.output_path()
+    if output.exists():
+        marker = "  (exists, clean — would skip)" if is_successful_run(output) else \
+            "  (exists but recorded errors — would re-run)"
+    else:
+        marker = ""
     print(f"run_id      {run.run_id}")
     print(f"config      {run.config.name} ({run.config.strategy.name}, "
           f"{run.config.turn_budget} turns, seed {run.config.seed})")
-    print(f"output      {output}{'  (exists — would skip)' if output.exists() else ''}")
+    print(f"output      {output}{marker}")
     print(f"roster      {', '.join(run.agents)}")
     print(f"knowledge   {', '.join(run.knowledge) or '(none loaded)'}")
     print(f"summarizer  {run.summarizer.model} ({run.summarizer.provider})")
@@ -266,9 +290,14 @@ def _execute(run: ResolvedRun) -> RunRecord:
 
 def main(argv=None) -> int:
     args = _parse_args(argv)
+    _setup_tracing(args.experiment_id)
 
     try:
-        run = load(args.config)
+        config = load_run_config(args.config)
+        config = apply_overrides(
+            config, strategy=args.strategy, seed=args.seed, experiment_id=args.experiment_id,
+        )
+        run = resolve(config)
     except (ConfigError, FileNotFoundError, ValueError) as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
@@ -282,15 +311,18 @@ def main(argv=None) -> int:
         return 0
 
     output = run.output_path()
-    if output.exists() and not args.force:
-        print(f"{output} already exists — this run has been done. Use --force to redo it.")
+    if output.exists() and is_successful_run(output) and not args.force:
+        print(f"{output} already exists and completed cleanly — skipping. Use --force to redo it.")
         return 0
+    if output.exists() and not is_successful_run(output) and not args.force:
+        print(f"{output} exists but recorded errors from a previous attempt — re-running.")
 
-    Path("logs").mkdir(exist_ok=True)
+    log_dir = Path("logs") / args.experiment_id if args.experiment_id else Path("logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     # Keeps the `conversation_*` prefix judge.ipynb globs for, until the judge
     # reads run records instead (P2).
-    log_path = f"logs/conversation_{stamp}_{run.config.name}_{run.run_id}.log"
+    log_path = str(log_dir / f"conversation_{stamp}_{run.config.name}_{run.run_id}.log")
     real_stdout = sys.stdout
     with open(log_path, "w") as log_file:
         sys.stdout = _Tee(log_file)

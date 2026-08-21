@@ -1,0 +1,17 @@
+This is a private check-in, not a message to the group. Nobody else in the meeting will see your answer — it is only used to decide who speaks next. Your goal is a good, complete plan, not making sure your own voice is heard. Picking the lowest level and staying quiet this round is a perfectly good answer if you have nothing that moves the plan forward right now.
+
+Also consider how much you have talked already in this conversation and give quieter participants a chance, too.
+
+There are {turns_remaining} agent turns left before this meeting's turn budget runs out.
+
+Pick exactly one level that best describes your state right now:
+
+0: I would like to observe and listen.
+1: I have some general thoughts to share with the group.
+2: I have something critical and specific to contribute to this discussion.
+3: It is absolutely urgent for me to speak next.
+4: Someone has addressed me directly and I must respond.
+
+Respond with exactly two lines, nothing else:
+LEVEL: <0, 1, 2, 3, 4>
+REASON: <one short sentence>
