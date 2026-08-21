@@ -134,11 +134,18 @@ Provider quirks worth knowing:
   fallback that marks `usage.available = False` rather than reporting zeros.
 - **Anthropic has no `seed`.** It's recorded as a replicate label and used to
   seed the run's `random.Random`, but not sent.
-- **Gemini has no `seed` either**, despite living behind the same
-  OpenAI-compatible `chat.completions` surface as the others — it 400s with
-  `Unknown name "seed": Cannot find field` on every call. `_call_openai_compatible`
-  skips sending it for `provider == "google"` specifically, rather than paying
-  for a guaranteed-failing first attempt (and a red span in tracing) each turn.
+- **Gemini and Mistral have no `seed` either**, despite living behind the same
+  OpenAI-compatible `chat.completions` surface as the others. Gemini 400s with
+  `Unknown name "seed": Cannot find field`; Mistral 422s with `Extra inputs are
+  not permitted`. `_call_openai_compatible` skips sending it for both
+  (`_NO_SEED_PROVIDERS`) rather than paying for a guaranteed-failing first
+  attempt (and a red span in tracing) each turn. Mistral's 422 is also why
+  `_rejects_optional_kwargs`'s fallback checks `openai.APIStatusError`, not
+  just `openai.BadRequestError` — `UnprocessableEntityError` (422) is a
+  sibling of `BadRequestError` (400) under `APIStatusError`, not a subclass of
+  it, so the narrower check let Mistral's rejection abort the whole
+  conversation instead of retrying without the optional kwargs like every
+  other provider's 400-shaped version of the same rejection does.
 - **Gemini rejects a request whose message list ends on a model turn** — e.g.
   the same agent speaking twice in a row with no one else's turn in between,
   which any non-round-robin strategy can produce. Every other provider

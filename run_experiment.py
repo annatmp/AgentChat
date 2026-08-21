@@ -26,7 +26,9 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -45,6 +47,11 @@ def _parse_args(argv=None):
                         help="validate every cell and print the grid preview without running anything")
     parser.add_argument("--force", action="store_true",
                         help="re-run every cell even if it already completed cleanly")
+    parser.add_argument("--parallel", type=int, default=1,
+                        help="run this many cells at once (default: 1, sequential with live "
+                             "streaming). Above 1, cells run silently in the background — "
+                             "output is captured and only printed if a cell fails — since "
+                             "concurrent live streams would just interleave into garbage.")
     return parser.parse_args(argv)
 
 
@@ -104,14 +111,51 @@ def _print_preview(resolved: list[tuple[Cell, ResolvedRun]], problems: list[str]
             print(f"  - {problem}")
 
 
-def _execute_cell(cell: Cell, experiment_id: str, force: bool) -> None:
+def _cell_label(cell: Cell) -> str:
+    strategy = cell.strategy or "(default)"
+    return f"{cell.tier}/{Path(cell.panel_config).stem} strategy={strategy} seed={cell.seed}"
+
+
+def _cell_command(cell: Cell, experiment_id: str, force: bool) -> list[str]:
     cmd = ["uv", "run", "main.py", cell.panel_config,
            "--experiment-id", experiment_id, "--seed", str(cell.seed)]
     if cell.strategy:
         cmd += ["--strategy", cell.strategy]
     if force:
         cmd += ["--force"]
-    subprocess.run(cmd, check=False)  # nonzero exit is expected/recorded data, not a harness bug
+    return cmd
+
+
+def _execute_cell(cell: Cell, experiment_id: str, force: bool) -> None:
+    """Sequential path: inherits stdout, so the conversation streams live like a normal main.py run."""
+    subprocess.run(_cell_command(cell, experiment_id, force), check=False)  # nonzero exit is recorded data
+
+
+def _run_cell_parallel(
+    cell: Cell, run: ResolvedRun, experiment_id: str, force: bool, print_lock: threading.Lock,
+) -> dict:
+    """
+    Parallel path: output is captured, not streamed — concurrent live streams from
+    several cells would interleave into garbage. Announces start/finish on one line
+    each so the terminal isn't silent for the whole run, and prints the captured
+    output on failure so a broken cell isn't a silent black box.
+    """
+    label = _cell_label(cell)
+    with print_lock:
+        print(f"  > starting   {label}", flush=True)
+    result = subprocess.run(
+        _cell_command(cell, experiment_id, force), check=False, capture_output=True, text=True,
+    )
+    row = _cell_row(cell, run, ran=True)
+    with print_lock:
+        cost = f"${row['cost_usd']:.4f}" if row["cost_usd"] is not None else "cost n/a"
+        print(f"  < {row['status']:8} {label} — {cost}", flush=True)
+        if row["status"] in ("failed", "missing"):
+            if result.stdout:
+                print(result.stdout, end="")
+            if result.stderr:
+                print(result.stderr, end="", file=sys.stderr)
+    return row
 
 
 def _cell_row(cell: Cell, run: ResolvedRun, ran: bool) -> dict:
@@ -140,6 +184,12 @@ def _write_summary(
     experiment_path: Path, experiment_id: str, rows: list[dict], started_at: str, wall_clock_s: float,
 ) -> Path:
     known_costs = [r["cost_usd"] for r in rows if r["cost_usd"] is not None]
+    # A cell's own cost_usd can be a non-None *partial* sum (some calls priced,
+    # some not — e.g. an unpriced model in pricing.py) — so completeness must
+    # come from each cell's own cost_complete flag, not from "cost_usd isn't
+    # None", or a partial sum reads as a complete one at the experiment level.
+    # all([]) is True, matching _sum_usage's "no calls genuinely cost nothing".
+    cost_complete = all(r["cost_complete"] for r in rows)
     summary = {
         "experiment_id": experiment_id,
         "experiment_config": str(experiment_path),
@@ -154,7 +204,7 @@ def _write_summary(
             "skipped": sum(1 for r in rows if r["status"] == "skipped"),
             "failed": sum(1 for r in rows if r["status"] in ("failed", "missing")),
             "cost_usd": round(sum(known_costs), 6) if known_costs else (0.0 if not rows else None),
-            "cost_complete": len(known_costs) == len(rows),
+            "cost_complete": cost_complete,
         },
     }
     out_dir = Path("runs") / experiment_id
@@ -190,19 +240,40 @@ def main(argv=None) -> int:
         return 0
 
     rows: list[dict] = []
+    to_run: list[tuple[Cell, ResolvedRun]] = []
+    for cell, run in resolved:
+        output = run.output_path()
+        if output.exists() and is_successful_run(output) and not args.force:
+            rows.append(_cell_row(cell, run, ran=False))
+        else:
+            to_run.append((cell, run))
+
     started_at = datetime.now(timezone.utc).isoformat()
     clock = time.perf_counter()
     try:
-        for cell, run in resolved:
-            output = run.output_path()
-            if output.exists() and is_successful_run(output) and not args.force:
-                rows.append(_cell_row(cell, run, ran=False))
-                continue
-            strategy = cell.strategy or "(default)"
-            print(f"\n=== {cell.tier}/{Path(cell.panel_config).stem} "
-                  f"strategy={strategy} seed={cell.seed} ===", flush=True)
-            _execute_cell(cell, experiment_id, args.force)
-            rows.append(_cell_row(cell, run, ran=True))
+        if args.parallel <= 1:
+            for cell, run in to_run:
+                print(f"\n=== {_cell_label(cell)} ===", flush=True)
+                _execute_cell(cell, experiment_id, args.force)
+                rows.append(_cell_row(cell, run, ran=True))
+        else:
+            print(f"\nrunning {len(to_run)} cell(s), up to {args.parallel} at once "
+                  f"(output captured, not streamed — see below on failure)\n", flush=True)
+            print_lock = threading.Lock()
+            with ThreadPoolExecutor(max_workers=args.parallel) as executor:
+                futures = {
+                    executor.submit(_run_cell_parallel, cell, run, experiment_id, args.force, print_lock): cell
+                    for cell, run in to_run
+                }
+                try:
+                    for future in as_completed(futures):
+                        rows.append(future.result())
+                except KeyboardInterrupt:
+                    # Cancels cells that haven't started yet; ones already running can't be
+                    # force-killed mid-subprocess-call, so they finish naturally (bounded by
+                    # --parallel, not unbounded) before this function returns.
+                    executor.shutdown(wait=True, cancel_futures=True)
+                    raise
     finally:
         summary_path = _write_summary(experiment_path, experiment_id, rows, started_at,
                                        time.perf_counter() - clock)
